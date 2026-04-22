@@ -4,13 +4,26 @@
 
 :root {
   color-scheme: light;
+  --medora-ink: #132926;
+  --medora-paper: #f6f0e7;
 }
 
 html,
 body {
+  min-height: 100vh;
   margin: 0;
   padding: 0;
+  background:
+    radial-gradient(circle at top left, rgba(71, 85, 105, 0.18), transparent 24rem),
+    radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.16), transparent 28rem),
+    linear-gradient(180deg, #fffdf7 0%, var(--medora-paper) 100%);
+  color: var(--medora-ink);
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
 * {

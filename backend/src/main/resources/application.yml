@@ -1,6 +1,21 @@
 spring:
   application:
     name: medora-backend
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:medora}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
 
 server:
   port: ${BACKEND_PORT:8080}
@@ -20,4 +35,10 @@ logging:
     com.medora: INFO
 
 medora:
-  phase: phase-0
+  phase: phase-2
+  auth:
+    jwt:
+      issuer: medora
+      secret: ${JWT_SECRET:dev-only-medora-jwt-secret-key-change-before-prod-2026}
+      access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT2H}
+      refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:P14D}
