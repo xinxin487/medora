@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: medora-backend
+
+server:
+  port: ${BACKEND_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.medora: INFO
+
+medora:
+  phase: phase-0

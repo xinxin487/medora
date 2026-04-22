@@ -1,0 +1,33 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+
+# Logs
+*.log
+logs/
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Java / Maven
+backend/target/
+backend/.mvn/
+
+# Gradle
+backend/.gradle/
+backend/build/
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/coverage/
+
+# Misc
+*.tmp
+*.swp
