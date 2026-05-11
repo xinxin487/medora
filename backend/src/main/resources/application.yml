@@ -35,7 +35,7 @@ logging:
     com.medora: INFO
 
 medora:
-  phase: phase-2
+  phase: phase-4
   auth:
     jwt:
       issuer: medora

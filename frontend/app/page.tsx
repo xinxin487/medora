@@ -1,9 +1,9 @@
 import Link from "next/link";
 
 const checkpoints = [
-  "后端已经补齐 JWT、Refresh Token、统一安全拦截和当前用户接口。",
-  "前端新增了 Phase 2 认证联调页，可直接验证注册、登录和资料更新。",
-  "下一阶段会沿着实施计划进入预约业务闭环，也就是 Phase 3。",
+  "Phase 3 已完成预约创建、取消、列表和详情，号源扣减与回补可以联调验证。",
+  "Phase 4 新增会话、消息落库和 SSE 基础流式返回。",
+  "后续阶段会把知识库检索、Agent 工具调用和记忆能力接到这条对话链路上。",
 ];
 
 export default function HomePage() {
@@ -12,16 +12,16 @@ export default function HomePage() {
       <section className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="rounded-[2rem] border border-white/60 bg-white/80 p-8 shadow-[0_25px_80px_rgba(15,23,42,0.08)] backdrop-blur">
           <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">
-            Phase 2
+            Phase 4
           </span>
 
           <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl">
-            Medora 已经接入用户认证主链路，当前可以直接进入登录联调。
+            Medora 已经进入对话基础能力阶段，当前可以验证会话和流式消息。
           </h1>
 
           <p className="mt-6 max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
-            这一步把用户身份能力从设计文档落实到了代码，包括登录、注册、JWT
-            鉴权、Refresh Token 和当前用户资料读取。后续预约、会话和后台模块都将复用这套基础能力。
+            预约闭环已经完成，新的对话页会复用当前登录态创建会话、发送消息，并通过
+            SSE 增量展示助手回复。后续 RAG 与 Agent 都会沿用这一条消息主链路。
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
@@ -36,6 +36,12 @@ export default function HomePage() {
               className="rounded-full bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600"
             >
               进入预约联调页
+            </Link>
+            <Link
+              href="/chat"
+              className="rounded-full bg-cyan-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-cyan-600"
+            >
+              进入对话联调页
             </Link>
             <a
               href="http://localhost:8080/api/v1/health"

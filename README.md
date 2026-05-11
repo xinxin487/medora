@@ -1,6 +1,6 @@
 # Medora
 
-Medora 是一个面向医疗服务场景的工程化智能助手系统。当前项目已经完成 Phase 0 到 Phase 3 的核心开发，具备本地可运行的前后端、数据库迁移、用户认证、主数据查询，以及预约创建/取消闭环能力。
+Medora 是一个面向医疗服务场景的工程化智能助手系统。当前项目已经完成 Phase 0 到 Phase 4 的核心开发，具备本地可运行的前后端、数据库迁移、用户认证、主数据查询、预约创建/取消闭环，以及会话消息与 SSE 流式对话基础能力。
 
 ## 当前进度
 
@@ -8,7 +8,8 @@ Medora 是一个面向医疗服务场景的工程化智能助手系统。当前�
 - Phase 1：数据库 migration、科室/医生/号源主数据查询已完成。
 - Phase 2：注册、登录、JWT 鉴权、当前用户接口已完成。
 - Phase 3：预约创建、幂等提交、预约列表/详情、取消预约、号源库存扣减与回补已完成。
-- 下一阶段：Phase 4，会话、消息与 SSE 基础流式链路。
+- Phase 4：会话创建、消息落库、SSE 基础流式返回、前端对话联调页已完成。
+- 下一阶段：Phase 5，知识库接入与基础 RAG。
 
 ## 仓库结构
 
@@ -83,6 +84,7 @@ npm run build
 后端健康检查：http://localhost:8080/api/v1/health
 前端首页：http://localhost:3000
 预约页面：http://localhost:3000/appointments
+对话页面：http://localhost:3000/chat
 ```
 
 ## Phase 3 核心能力
@@ -93,15 +95,25 @@ npm run build
 - `POST /api/v1/appointments/{appointmentId}/cancel`：取消预约并回补号源库存。
 - 预约操作会写入 `appointment_operation_log`。
 
+## Phase 4 核心能力
+
+- `POST /api/v1/chat/conversations`：创建会话。
+- `GET /api/v1/chat/conversations`：查询我的会话列表。
+- `GET /api/v1/chat/conversations/{conversationId}/messages`：查询会话消息。
+- `POST /api/v1/chat/conversations/{conversationId}/stream`：通过 SSE 流式返回助手回复。
+- 当前助手回复为固定 stub，后续 Phase 5/6 将接入知识库 RAG 与 Agent 编排。
+
 ## 文档入口
 
 - [实施计划](./design/05-implementation-plan.md)
 - [API 契约设计](./design/03-api-contract-design.md)
 - [阶段文档索引](./docs/README.md)
 - [Phase 3 开发日志](./docs/phase-3-%E5%BC%80%E5%8F%91%E6%97%A5%E5%BF%97.md)
+- [Phase 4 开发日志](./docs/phase-4-%E5%BC%80%E5%8F%91%E6%97%A5%E5%BF%97.md)
 
 ## 已验证结果
 
-- 后端测试通过：`9 tests, 0 failures, 0 errors`
+- 后端测试通过：`11 tests, 0 failures, 0 errors`
 - 前端构建通过：`npm run build`
 - Phase 3 联调通过：注册登录、查询号源、创建预约、重复幂等提交、查询列表/详情、取消预约、库存 `8 -> 7 -> 8`
+- Phase 4 联调通过：注册登录、创建会话、SSE 返回 `message_start/message_delta/message_end`、消息落库返回 `USER + ASSISTANT`
