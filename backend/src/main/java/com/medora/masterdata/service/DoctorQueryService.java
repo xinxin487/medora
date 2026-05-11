@@ -10,6 +10,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.UUID;
@@ -25,6 +26,7 @@ public class DoctorQueryService {
         this.doctorRepository = doctorRepository;
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<DoctorItem> list(DoctorListQuery query) {
         Pageable pageable = PageRequest.of(normalizePageNo(query.pageNo()), normalizePageSize(query.pageSize()));
         String status = StringUtils.hasText(query.status()) ? query.status() : DEFAULT_STATUS;
@@ -39,6 +41,7 @@ public class DoctorQueryService {
         return PageResponse.from(page.map(this::toItem));
     }
 
+    @Transactional(readOnly = true)
     public DoctorDetailResponse getDetail(String doctorId) {
         DoctorEntity entity = doctorRepository.findByPublicId(UUID.fromString(doctorId))
                 .orElseThrow(() -> new IllegalArgumentException("doctor not found"));

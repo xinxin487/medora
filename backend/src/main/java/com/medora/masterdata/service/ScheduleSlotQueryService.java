@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
@@ -25,6 +26,7 @@ public class ScheduleSlotQueryService {
         this.scheduleSlotRepository = scheduleSlotRepository;
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<ScheduleSlotItem> list(ScheduleSlotListQuery query) {
         if (!StringUtils.hasText(query.scheduleDate())) {
             throw new IllegalArgumentException("scheduleDate is required");

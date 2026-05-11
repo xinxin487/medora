@@ -31,6 +31,12 @@ export default function HomePage() {
             >
               进入认证联调页
             </Link>
+            <Link
+              href="/appointments"
+              className="rounded-full bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600"
+            >
+              进入预约联调页
+            </Link>
             <a
               href="http://localhost:8080/api/v1/health"
               className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400"

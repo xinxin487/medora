@@ -5,6 +5,7 @@
 当前可用文档：
 - [Windows 本地环境安装与验证清单](./windows-local-setup-checklist.md)
 - [Phase 2 开发日志](./phase-2-%E5%BC%80%E5%8F%91%E6%97%A5%E5%BF%97.md)
+- [Phase 3 开发日志](./phase-3-%E5%BC%80%E5%8F%91%E6%97%A5%E5%BF%97.md)
 
 后续建议继续补充以下内容：
 - 启动说明

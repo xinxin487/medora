@@ -52,12 +52,13 @@ export async function apiFetch<T>(
     | ApiErrorResponse;
 
   if (!response.ok || payload.code !== "SUCCESS") {
+    const errorPayload = payload as ApiErrorResponse;
     throw new ApiClientError(
-      payload.code ?? "HTTP_ERROR",
-      payload.message ?? "request failed",
-      payload.details ?? [],
+      errorPayload.code ?? "HTTP_ERROR",
+      errorPayload.message ?? "request failed",
+      errorPayload.details ?? [],
     );
   }
 
-  return payload.data;
+  return (payload as ApiSuccessResponse<T>).data;
 }

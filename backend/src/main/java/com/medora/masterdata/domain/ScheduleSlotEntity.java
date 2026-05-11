@@ -108,4 +108,24 @@ public class ScheduleSlotEntity extends BaseEntity {
     public String getSourceType() {
         return sourceType;
     }
+
+    public void reserveOne() {
+        if (!"OPEN".equals(status) || availableQuota == null || availableQuota <= 0) {
+            throw new IllegalStateException("schedule slot is not available");
+        }
+        availableQuota = availableQuota - 1;
+        if (availableQuota == 0) {
+            status = "FULL";
+        }
+    }
+
+    public void releaseOne() {
+        if (availableQuota == null || totalQuota == null || availableQuota >= totalQuota) {
+            return;
+        }
+        availableQuota = availableQuota + 1;
+        if ("FULL".equals(status) && availableQuota > 0) {
+            status = "OPEN";
+        }
+    }
 }
