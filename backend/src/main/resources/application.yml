@@ -35,7 +35,14 @@ logging:
     com.medora: INFO
 
 medora:
-  phase: phase-4
+  phase: phase-5
+  ai:
+    provider: ${AI_PROVIDER:local-hash}
+    api-key: ${AI_API_KEY:${OPENAI_API_KEY:}}
+    base-url: ${AI_BASE_URL:${OPENAI_BASE_URL:https://api.openai.com/v1}}
+    chat-model: ${AI_CHAT_MODEL:${CHAT_MODEL:gpt-4.1-mini}}
+    embedding-model: ${AI_EMBEDDING_MODEL:${EMBEDDING_MODEL:local-hash-1024}}
+    embedding-dimensions: ${AI_EMBEDDING_DIMENSIONS:1024}
   auth:
     jwt:
       issuer: medora

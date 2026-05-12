@@ -98,7 +98,12 @@ public class ChatMessageEntity extends BaseEntity {
     }
 
     public void completeAssistantContent(String content, String tokenUsageJson) {
+        completeAssistantContent(content, tokenUsageJson, this.citationJson);
+    }
+
+    public void completeAssistantContent(String content, String tokenUsageJson, String citationJson) {
         this.content = content;
         this.tokenUsageJson = tokenUsageJson == null || tokenUsageJson.isBlank() ? "{}" : tokenUsageJson;
+        this.citationJson = citationJson == null || citationJson.isBlank() ? "[]" : citationJson;
     }
 }

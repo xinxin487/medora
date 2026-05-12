@@ -11,6 +11,9 @@ import com.medora.chat.repository.ChatMessageRepository;
 import com.medora.chat.repository.ConversationRepository;
 import com.medora.chat.sse.StreamEventPublisher;
 import com.medora.common.exception.BusinessException;
+import com.medora.knowledge.service.KnowledgeJsonService;
+import com.medora.knowledge.service.RetrievalResult;
+import com.medora.knowledge.service.RetrievalService;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -21,6 +24,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -33,6 +37,8 @@ public class ChatRuntimeService {
     private final TransactionTemplate transactionTemplate;
     private final TaskExecutor taskExecutor;
     private final StreamEventPublisher streamEventPublisher;
+    private final RetrievalService retrievalService;
+    private final KnowledgeJsonService knowledgeJsonService;
 
     public ChatRuntimeService(CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider,
                               UserAccountRepository userAccountRepository,
@@ -40,7 +46,9 @@ public class ChatRuntimeService {
                               ChatMessageRepository chatMessageRepository,
                               TransactionTemplate transactionTemplate,
                               TaskExecutor taskExecutor,
-                              StreamEventPublisher streamEventPublisher) {
+                              StreamEventPublisher streamEventPublisher,
+                              RetrievalService retrievalService,
+                              KnowledgeJsonService knowledgeJsonService) {
         this.currentAuthenticatedUserProvider = currentAuthenticatedUserProvider;
         this.userAccountRepository = userAccountRepository;
         this.conversationRepository = conversationRepository;
@@ -48,6 +56,8 @@ public class ChatRuntimeService {
         this.transactionTemplate = transactionTemplate;
         this.taskExecutor = taskExecutor;
         this.streamEventPublisher = streamEventPublisher;
+        this.retrievalService = retrievalService;
+        this.knowledgeJsonService = knowledgeJsonService;
     }
 
     public SseEmitter stream(String conversationId, ChatStreamRequest request) {
@@ -77,12 +87,29 @@ public class ChatRuntimeService {
                     session.traceId()
             );
 
-            String reply = buildStubAssistantReply(request.message());
+            List<RetrievalResult> retrievalResults = retrievalService.retrieve(request.message(), null, 3);
+            for (int index = 0; index < retrievalResults.size(); index++) {
+                RetrievalResult result = retrievalResults.get(index);
+                streamEventPublisher.publishCitation(
+                        emitter,
+                        result.documentId(),
+                        result.title(),
+                        result.snippet(),
+                        index + 1
+                );
+            }
+
+            String reply = buildAssistantReply(request.message(), retrievalResults);
             for (String delta : splitDeltas(reply)) {
                 streamEventPublisher.publishDelta(emitter, delta);
             }
 
-            completeAssistantMessage(session.assistantMessageId(), session.conversationId(), reply);
+            completeAssistantMessage(
+                    session.assistantMessageId(),
+                    session.conversationId(),
+                    reply,
+                    toCitationJson(retrievalResults)
+            );
             streamEventPublisher.publishMessageEnd(emitter, session.assistantMessagePublicId());
             emitter.complete();
         } catch (Exception ex) {
@@ -122,12 +149,43 @@ public class ChatRuntimeService {
         });
     }
 
-    private void completeAssistantMessage(Long assistantMessageId, Long conversationId, String reply) {
+    private String buildAssistantReply(String userMessage, List<RetrievalResult> retrievalResults) {
+        if (retrievalResults.isEmpty()) {
+            return buildStubAssistantReply(userMessage)
+                    + " 我暂未检索到已发布知识库引用，因此这次不会附带知识来源。";
+        }
+
+        StringBuilder builder = new StringBuilder("基于已发布知识库，找到以下参考信息：");
+        for (int index = 0; index < retrievalResults.size(); index++) {
+            RetrievalResult result = retrievalResults.get(index);
+            builder.append("\n\n[").append(index + 1).append("] ")
+                    .append(result.snippet());
+        }
+        builder.append("\n\n以上内容来自知识库引用，正式医疗判断仍建议结合医生面诊。");
+        return builder.toString();
+    }
+
+    private String toCitationJson(List<RetrievalResult> retrievalResults) {
+        return knowledgeJsonService.toJson(retrievalResults.stream()
+                .map(result -> Map.of(
+                        "sourceId", result.documentId(),
+                        "chunkId", result.chunkId(),
+                        "title", result.title(),
+                        "snippet", result.snippet(),
+                        "score", result.score()
+                ))
+                .toList());
+    }
+
+    private void completeAssistantMessage(Long assistantMessageId,
+                                          Long conversationId,
+                                          String reply,
+                                          String citationJson) {
         transactionTemplate.executeWithoutResult(status -> {
             ChatMessageEntity assistantMessage = chatMessageRepository.findById(assistantMessageId)
                     .orElseThrow(() -> new BusinessException("CHAT_MESSAGE_NOT_FOUND", HttpStatus.NOT_FOUND,
                             "assistant message not found"));
-            assistantMessage.completeAssistantContent(reply, "{\"inputTokens\":0,\"outputTokens\":0}");
+            assistantMessage.completeAssistantContent(reply, "{\"inputTokens\":0,\"outputTokens\":0}", citationJson);
             ConversationEntity conversation = conversationRepository.findById(conversationId)
                     .orElseThrow(() -> new BusinessException("CHAT_CONVERSATION_NOT_FOUND", HttpStatus.NOT_FOUND,
                             "conversation not found"));

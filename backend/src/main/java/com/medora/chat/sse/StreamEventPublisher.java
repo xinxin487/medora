@@ -22,6 +22,19 @@ public class StreamEventPublisher {
         send(emitter, "message_delta", Map.of("delta", delta));
     }
 
+    public void publishCitation(SseEmitter emitter,
+                                String sourceId,
+                                String title,
+                                String snippet,
+                                int index) throws IOException {
+        send(emitter, "citation", Map.of(
+                "sourceId", sourceId,
+                "title", title,
+                "snippet", snippet,
+                "index", index
+        ));
+    }
+
     public void publishMessageEnd(SseEmitter emitter, String messageId) throws IOException {
         send(emitter, "message_end", Map.of(
                 "messageId", messageId,

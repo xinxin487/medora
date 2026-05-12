@@ -24,6 +24,13 @@ type ChatMessage = {
   pending?: boolean;
 };
 
+type ChatCitation = {
+  sourceId?: string;
+  title?: string;
+  snippet?: string;
+  index?: number;
+};
+
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState("");
@@ -168,6 +175,21 @@ export default function ChatPage() {
             setStatus("回复已完成并落库。");
           }
 
+          if (streamEvent.event === "citation") {
+            setMessages((current) =>
+              current.map((item) => {
+                if (item.role !== "ASSISTANT" || !item.pending) {
+                  return item;
+                }
+                const citations = parseCitations(item.citations);
+                return {
+                  ...item,
+                  citations: JSON.stringify([...citations, streamEvent.data]),
+                };
+              }),
+            );
+          }
+
           if (streamEvent.event === "error") {
             setError(`${streamEvent.data.code}: ${streamEvent.data.message}`);
           }
@@ -259,7 +281,7 @@ export default function ChatPage() {
         <section className="flex min-h-[calc(100vh-3rem)] flex-col bg-white">
           <header className="border-b border-slate-200 px-5 py-4">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Phase 4 Chat
+              Phase 5 Chat
             </p>
             <h1 className="mt-2 text-2xl font-semibold">
               {activeConversation?.title ?? "导诊咨询"}
@@ -285,6 +307,21 @@ export default function ChatPage() {
                     }`}
                   >
                     {message.content || (message.pending ? "正在生成..." : "")}
+                    {message.role === "ASSISTANT" && parseCitations(message.citations).length > 0 ? (
+                      <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+                        {parseCitations(message.citations).map((citation, index) => (
+                          <div
+                            className="rounded-md bg-white px-3 py-2 text-xs leading-5 text-slate-600"
+                            key={`${message.messageId}-citation-${citation.sourceId ?? index}`}
+                          >
+                            <div className="font-semibold text-emerald-700">
+                              [{citation.index ?? index + 1}] {citation.title ?? "知识库引用"}
+                            </div>
+                            <div>{citation.snippet}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 </article>
               ))
@@ -312,4 +349,13 @@ export default function ChatPage() {
       </section>
     </main>
   );
+}
+
+function parseCitations(value: string): ChatCitation[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
