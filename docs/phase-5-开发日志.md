@@ -109,6 +109,14 @@
 - 联调日期：2026-05-12
 - 向量模型与向量库验证：
   - 联调环境已验证 `openai-compatible` 模式可调用 SiliconFlow `Qwen/Qwen3-Embedding-8B`。
+  - 本次联调使用的关键环境变量配置为：
+    - `AI_PROVIDER=openai-compatible`
+    - `AI_BASE_URL=https://api.siliconflow.cn/v1`
+    - `AI_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-8B`
+    - `AI_EMBEDDING_DIMENSIONS=1024`
+    - `AI_API_KEY` 通过环境变量注入，未在仓库中明文保存
+  - 后端默认配置已支持上述环境变量覆盖，默认回退值位于 `application.yml`。
+  - 数据库向量环境基于 `pgvector` 扩展，`V8__add_knowledge_embedding_vector.sql` 中已显式执行 `CREATE EXTENSION IF NOT EXISTS vector;`。
   - 文档切片 embedding 已写入 `knowledge_chunk.embedding vector(1024)`。
   - 检索链路为 `KeywordRetriever + VectorRetriever + HybridRetriever` 混合召回，不再是纯占位实现。
 - 运行时兼容性修复：
