@@ -50,7 +50,21 @@ public class AppointmentCommandService {
 
     @Transactional
     public AppointmentResponse create(CreateAppointmentRequest request, String idempotencyKey) {
-        UserAccountEntity userAccount = getCurrentUserAccount();
+        return createForUser(getCurrentUserAccount(), request, idempotencyKey, "WEB");
+    }
+
+    @Transactional
+    public AppointmentResponse createForUser(Long userAccountId,
+                                             CreateAppointmentRequest request,
+                                             String idempotencyKey,
+                                             String source) {
+        return createForUser(getUserAccount(userAccountId), request, idempotencyKey, source);
+    }
+
+    private AppointmentResponse createForUser(UserAccountEntity userAccount,
+                                              CreateAppointmentRequest request,
+                                              String idempotencyKey,
+                                              String source) {
         String normalizedIdempotencyKey = normalizeToNull(idempotencyKey);
         if (StringUtils.hasText(normalizedIdempotencyKey)) {
             var existing = appointmentRepository.findByUserAccountAndIdempotencyKey(userAccount, normalizedIdempotencyKey);
@@ -80,7 +94,8 @@ public class AppointmentCommandService {
                 slot,
                 generateAppointmentNo(),
                 normalizedIdempotencyKey,
-                normalizeToNull(request.remark())
+                normalizeToNull(request.remark()),
+                normalizeSource(source)
         );
         AppointmentEntity saved = appointmentRepository.save(appointment);
         operationLogRepository.save(AppointmentOperationLogEntity.of(
@@ -90,14 +105,28 @@ public class AppointmentCommandService {
                 RequestMetadata.currentRequestId(),
                 null,
                 saved.getStatus(),
-                "{\"source\":\"WEB\"}"
+                "{\"source\":\"" + normalizeSource(source) + "\"}"
         ));
         return AppointmentResponseMapper.toResponse(saved);
     }
 
     @Transactional
     public AppointmentCancelResponse cancel(String appointmentId, CancelAppointmentRequest request) {
-        UserAccountEntity userAccount = getCurrentUserAccount();
+        return cancelForUser(getCurrentUserAccount(), appointmentId, request, "WEB");
+    }
+
+    @Transactional
+    public AppointmentCancelResponse cancelForUser(Long userAccountId,
+                                                   String appointmentId,
+                                                   CancelAppointmentRequest request,
+                                                   String source) {
+        return cancelForUser(getUserAccount(userAccountId), appointmentId, request, source);
+    }
+
+    private AppointmentCancelResponse cancelForUser(UserAccountEntity userAccount,
+                                                    String appointmentId,
+                                                    CancelAppointmentRequest request,
+                                                    String source) {
         AppointmentEntity appointment = appointmentRepository.findByPublicIdForUpdate(parseUuid(appointmentId, "appointmentId"))
                 .orElseThrow(() -> new BusinessException("APPOINTMENT_NOT_FOUND", HttpStatus.NOT_FOUND,
                         "appointment not found"));
@@ -108,7 +137,7 @@ public class AppointmentCommandService {
         }
         String beforeStatus = appointment.getStatus();
         try {
-            appointment.cancel(normalizeToNull(request.cancelReason()));
+            appointment.cancel(normalizeToNull(request.cancelReason()), normalizeSource(source));
         } catch (IllegalStateException ex) {
             throw new BusinessException("APPOINTMENT_CANCEL_NOT_ALLOWED", HttpStatus.UNPROCESSABLE_ENTITY,
                     ex.getMessage());
@@ -125,7 +154,7 @@ public class AppointmentCommandService {
                 RequestMetadata.currentRequestId(),
                 beforeStatus,
                 appointment.getStatus(),
-                "{\"source\":\"WEB\"}"
+                "{\"source\":\"" + normalizeSource(source) + "\"}"
         ));
         return AppointmentResponseMapper.toCancelResponse(appointment);
     }
@@ -133,6 +162,12 @@ public class AppointmentCommandService {
     private UserAccountEntity getCurrentUserAccount() {
         AuthenticatedUser authenticatedUser = currentAuthenticatedUserProvider.getRequiredUser();
         return userAccountRepository.findByPublicId(authenticatedUser.userPublicId())
+                .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", HttpStatus.NOT_FOUND,
+                        "current user not found"));
+    }
+
+    private UserAccountEntity getUserAccount(Long userAccountId) {
+        return userAccountRepository.findById(userAccountId)
                 .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", HttpStatus.NOT_FOUND,
                         "current user not found"));
     }
@@ -151,6 +186,10 @@ public class AppointmentCommandService {
             return null;
         }
         return value.trim();
+    }
+
+    private String normalizeSource(String source) {
+        return StringUtils.hasText(source) ? source.trim().toUpperCase() : "WEB";
     }
 
     private String generateAppointmentNo() {

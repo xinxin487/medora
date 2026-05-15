@@ -1,12 +1,12 @@
 package com.medora.chat.service;
 
+import com.medora.agent.application.ChatOrchestrator;
+import com.medora.agent.trace.AgentTraceService;
 import com.medora.auth.repository.UserAccountRepository;
 import com.medora.auth.security.CurrentAuthenticatedUserProvider;
 import com.medora.chat.repository.ChatMessageRepository;
 import com.medora.chat.repository.ConversationRepository;
 import com.medora.chat.sse.StreamEventPublisher;
-import com.medora.knowledge.service.KnowledgeJsonService;
-import com.medora.knowledge.service.RetrievalService;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -26,14 +26,14 @@ class ChatRuntimeServiceTest {
                 mock(TransactionTemplate.class),
                 new SyncTaskExecutor(),
                 mock(StreamEventPublisher.class),
-                mock(RetrievalService.class),
-                mock(KnowledgeJsonService.class)
+                mock(ChatOrchestrator.class),
+                mock(AgentTraceService.class)
         );
 
         String reply = service.buildStubAssistantReply("我最近咳嗽，应该挂哪个科？");
 
         assertTrue(reply.contains("我最近咳嗽"));
-        assertTrue(reply.contains("SSE"));
-        assertTrue(reply.contains("消息落库"));
+        assertTrue(reply.contains("Agent"));
+        assertTrue(reply.contains("预约工具"));
     }
 }

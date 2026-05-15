@@ -1,5 +1,9 @@
 package com.medora.chat.service;
 
+import com.medora.agent.application.AgentChatCommand;
+import com.medora.agent.application.AgentRunResult;
+import com.medora.agent.application.ChatOrchestrator;
+import com.medora.agent.trace.AgentTraceService;
 import com.medora.auth.domain.UserAccountEntity;
 import com.medora.auth.repository.UserAccountRepository;
 import com.medora.auth.security.AuthenticatedUser;
@@ -11,9 +15,6 @@ import com.medora.chat.repository.ChatMessageRepository;
 import com.medora.chat.repository.ConversationRepository;
 import com.medora.chat.sse.StreamEventPublisher;
 import com.medora.common.exception.BusinessException;
-import com.medora.knowledge.service.KnowledgeJsonService;
-import com.medora.knowledge.service.RetrievalResult;
-import com.medora.knowledge.service.RetrievalService;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,7 +25,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -37,8 +37,8 @@ public class ChatRuntimeService {
     private final TransactionTemplate transactionTemplate;
     private final TaskExecutor taskExecutor;
     private final StreamEventPublisher streamEventPublisher;
-    private final RetrievalService retrievalService;
-    private final KnowledgeJsonService knowledgeJsonService;
+    private final ChatOrchestrator chatOrchestrator;
+    private final AgentTraceService agentTraceService;
 
     public ChatRuntimeService(CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider,
                               UserAccountRepository userAccountRepository,
@@ -47,8 +47,8 @@ public class ChatRuntimeService {
                               TransactionTemplate transactionTemplate,
                               TaskExecutor taskExecutor,
                               StreamEventPublisher streamEventPublisher,
-                              RetrievalService retrievalService,
-                              KnowledgeJsonService knowledgeJsonService) {
+                              ChatOrchestrator chatOrchestrator,
+                              AgentTraceService agentTraceService) {
         this.currentAuthenticatedUserProvider = currentAuthenticatedUserProvider;
         this.userAccountRepository = userAccountRepository;
         this.conversationRepository = conversationRepository;
@@ -56,8 +56,8 @@ public class ChatRuntimeService {
         this.transactionTemplate = transactionTemplate;
         this.taskExecutor = taskExecutor;
         this.streamEventPublisher = streamEventPublisher;
-        this.retrievalService = retrievalService;
-        this.knowledgeJsonService = knowledgeJsonService;
+        this.chatOrchestrator = chatOrchestrator;
+        this.agentTraceService = agentTraceService;
     }
 
     public SseEmitter stream(String conversationId, ChatStreamRequest request) {
@@ -73,11 +73,13 @@ public class ChatRuntimeService {
             normalized = normalized.substring(0, 80) + "...";
         }
         return "已收到你的问题：“" + normalized
-                + "”。当前阶段先完成会话、消息落库和 SSE 流式输出，后续会接入知识库检索与预约工具。";
+                + "”。当前阶段已接入 Agent 编排、知识检索和预约工具，你可以继续查询号源、预约或取消挂号。";
     }
 
     private void runStream(SseEmitter emitter, Long userAccountId, String conversationId, ChatStreamRequest request) {
         StreamSession session = null;
+        boolean assistantCompleted = false;
+        long startedAt = System.nanoTime();
         try {
             session = createStreamSession(userAccountId, conversationId, request);
             streamEventPublisher.publishMessageStart(
@@ -87,32 +89,32 @@ public class ChatRuntimeService {
                     session.traceId()
             );
 
-            List<RetrievalResult> retrievalResults = retrievalService.retrieve(request.message(), null, 3);
-            for (int index = 0; index < retrievalResults.size(); index++) {
-                RetrievalResult result = retrievalResults.get(index);
-                streamEventPublisher.publishCitation(
-                        emitter,
-                        result.documentId(),
-                        result.title(),
-                        result.snippet(),
-                        index + 1
-                );
-            }
-
-            String reply = buildAssistantReply(request.message(), retrievalResults);
-            for (String delta : splitDeltas(reply)) {
-                streamEventPublisher.publishDelta(emitter, delta);
-            }
-
+            AgentRunResult agentRunResult = chatOrchestrator.handle(
+                    new AgentChatCommand(
+                            userAccountId,
+                            session.conversationId(),
+                            session.assistantMessageId(),
+                            session.traceId(),
+                            request.message()
+                    ),
+                    emitter
+            );
+            String reply = agentRunResult.reply();
             completeAssistantMessage(
                     session.assistantMessageId(),
                     session.conversationId(),
+                    session.traceId(),
                     reply,
-                    toCitationJson(retrievalResults)
+                    agentRunResult,
+                    elapsedMillis(startedAt)
             );
+            assistantCompleted = true;
             streamEventPublisher.publishMessageEnd(emitter, session.assistantMessagePublicId());
             emitter.complete();
         } catch (Exception ex) {
+            if (session != null && !assistantCompleted) {
+                completeAssistantFailure(session, ex, elapsedMillis(startedAt));
+            }
             publishErrorAndComplete(emitter, ex);
         }
     }
@@ -149,47 +151,69 @@ public class ChatRuntimeService {
         });
     }
 
-    private String buildAssistantReply(String userMessage, List<RetrievalResult> retrievalResults) {
-        if (retrievalResults.isEmpty()) {
-            return buildStubAssistantReply(userMessage)
-                    + " 我暂未检索到已发布知识库引用，因此这次不会附带知识来源。";
-        }
-
-        StringBuilder builder = new StringBuilder("基于已发布知识库，找到以下参考信息：");
-        for (int index = 0; index < retrievalResults.size(); index++) {
-            RetrievalResult result = retrievalResults.get(index);
-            builder.append("\n\n[").append(index + 1).append("] ")
-                    .append(result.snippet());
-        }
-        builder.append("\n\n以上内容来自知识库引用，正式医疗判断仍建议结合医生面诊。");
-        return builder.toString();
-    }
-
-    private String toCitationJson(List<RetrievalResult> retrievalResults) {
-        return knowledgeJsonService.toJson(retrievalResults.stream()
-                .map(result -> Map.of(
-                        "sourceId", result.documentId(),
-                        "chunkId", result.chunkId(),
-                        "title", result.title(),
-                        "snippet", result.snippet(),
-                        "score", result.score()
-                ))
-                .toList());
-    }
-
     private void completeAssistantMessage(Long assistantMessageId,
                                           Long conversationId,
+                                          String traceId,
                                           String reply,
-                                          String citationJson) {
+                                          AgentRunResult agentRunResult,
+                                          long latencyMs) {
         transactionTemplate.executeWithoutResult(status -> {
             ChatMessageEntity assistantMessage = chatMessageRepository.findById(assistantMessageId)
                     .orElseThrow(() -> new BusinessException("CHAT_MESSAGE_NOT_FOUND", HttpStatus.NOT_FOUND,
                             "assistant message not found"));
-            assistantMessage.completeAssistantContent(reply, "{\"inputTokens\":0,\"outputTokens\":0}", citationJson);
+            assistantMessage.completeAssistantContent(
+                    reply,
+                    "{\"inputTokens\":0,\"outputTokens\":0}",
+                    agentRunResult.citationJson(),
+                    agentRunResult.toolCallJson()
+            );
             ConversationEntity conversation = conversationRepository.findById(conversationId)
                     .orElseThrow(() -> new BusinessException("CHAT_CONVERSATION_NOT_FOUND", HttpStatus.NOT_FOUND,
                             "conversation not found"));
             conversation.touchLastMessageAt(OffsetDateTime.now());
+            agentTraceService.record(new AgentTraceService.AgentTraceRecord(
+                    traceId,
+                    conversation,
+                    assistantMessage,
+                    agentRunResult.intentDecision().intentType(),
+                    agentRunResult.intentDecision().routeMode().name(),
+                    agentRunResult.citationJson(),
+                    agentRunResult.toolCallJson(),
+                    latencyMs,
+                    "SUCCESS",
+                    null
+            ));
+        });
+    }
+
+    private void completeAssistantFailure(StreamSession session, Exception ex, long latencyMs) {
+        transactionTemplate.executeWithoutResult(status -> {
+            ChatMessageEntity assistantMessage = chatMessageRepository.findById(session.assistantMessageId())
+                    .orElseThrow(() -> new BusinessException("CHAT_MESSAGE_NOT_FOUND", HttpStatus.NOT_FOUND,
+                            "assistant message not found"));
+            String errorMessage = ex instanceof BusinessException ? ex.getMessage() : "chat stream failed";
+            assistantMessage.completeAssistantContent(
+                    "抱歉，这次对话处理失败：" + errorMessage,
+                    "{\"inputTokens\":0,\"outputTokens\":0}",
+                    "[]",
+                    "{}"
+            );
+            ConversationEntity conversation = conversationRepository.findById(session.conversationId())
+                    .orElseThrow(() -> new BusinessException("CHAT_CONVERSATION_NOT_FOUND", HttpStatus.NOT_FOUND,
+                            "conversation not found"));
+            conversation.touchLastMessageAt(OffsetDateTime.now());
+            agentTraceService.record(new AgentTraceService.AgentTraceRecord(
+                    session.traceId(),
+                    conversation,
+                    assistantMessage,
+                    "UNKNOWN",
+                    "CHAT_ONLY",
+                    "[]",
+                    "[]",
+                    latencyMs,
+                    "FAILED",
+                    errorMessage
+            ));
         });
     }
 
@@ -201,7 +225,7 @@ public class ChatRuntimeService {
     }
 
     private List<String> splitDeltas(String reply) {
-        return List.of(reply.split("(?<=。)"));
+        return List.of(reply.split("(?<=。|\\n)"));
     }
 
     private void publishErrorAndComplete(SseEmitter emitter, Exception ex) {
@@ -225,6 +249,10 @@ public class ChatRuntimeService {
 
     private String normalizeToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
     }
 
     private record StreamSession(

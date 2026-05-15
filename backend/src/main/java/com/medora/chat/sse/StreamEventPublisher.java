@@ -35,6 +35,17 @@ public class StreamEventPublisher {
         ));
     }
 
+    public void publishToolStatus(SseEmitter emitter,
+                                  String toolName,
+                                  String status,
+                                  String message) throws IOException {
+        send(emitter, "tool_status", Map.of(
+                "toolName", toolName,
+                "status", status,
+                "message", message
+        ));
+    }
+
     public void publishMessageEnd(SseEmitter emitter, String messageId) throws IOException {
         send(emitter, "message_end", Map.of(
                 "messageId", messageId,

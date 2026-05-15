@@ -31,12 +31,18 @@ type ChatCitation = {
   index?: number;
 };
 
+type ToolStatusData = {
+  toolName?: string;
+  status?: string;
+  message?: string;
+};
+
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("我最近咳嗽，应该挂哪个科？");
-  const [status, setStatus] = useState("准备进行 Phase 4 对话联调。");
+  const [status, setStatus] = useState("准备进行 Phase 6 Agent 联调。");
   const [error, setError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
 
@@ -190,6 +196,15 @@ export default function ChatPage() {
             );
           }
 
+          if (streamEvent.event === "tool_status") {
+            const toolStatus = streamEvent.data as ToolStatusData;
+            setStatus(
+              `${toolStatus.toolName ?? "tool"} · ${toolStatus.status ?? "RUNNING"} · ${
+                toolStatus.message ?? "工具执行中"
+              }`,
+            );
+          }
+
           if (streamEvent.event === "error") {
             setError(`${streamEvent.data.code}: ${streamEvent.data.message}`);
           }
@@ -281,7 +296,7 @@ export default function ChatPage() {
         <section className="flex min-h-[calc(100vh-3rem)] flex-col bg-white">
           <header className="border-b border-slate-200 px-5 py-4">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Phase 5 Chat
+              Phase 6 Agent
             </p>
             <h1 className="mt-2 text-2xl font-semibold">
               {activeConversation?.title ?? "导诊咨询"}

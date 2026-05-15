@@ -73,6 +73,15 @@ public class AppointmentEntity extends BaseEntity {
                                               String appointmentNo,
                                               String idempotencyKey,
                                               String remark) {
+        return confirmed(userAccount, slot, appointmentNo, idempotencyKey, remark, "WEB");
+    }
+
+    public static AppointmentEntity confirmed(UserAccountEntity userAccount,
+                                              ScheduleSlotEntity slot,
+                                              String appointmentNo,
+                                              String idempotencyKey,
+                                              String remark,
+                                              String sourceChannel) {
         AppointmentEntity entity = new AppointmentEntity();
         entity.appointmentNo = appointmentNo;
         entity.userAccount = userAccount;
@@ -82,7 +91,7 @@ public class AppointmentEntity extends BaseEntity {
         entity.scheduleDate = slot.getScheduleDate();
         entity.periodCode = slot.getPeriodCode();
         entity.status = "CONFIRMED";
-        entity.sourceChannel = "WEB";
+        entity.sourceChannel = sourceChannel == null || sourceChannel.isBlank() ? "WEB" : sourceChannel;
         entity.idempotencyKey = idempotencyKey;
         entity.bookedAt = OffsetDateTime.now();
         entity.remark = remark;
@@ -154,12 +163,16 @@ public class AppointmentEntity extends BaseEntity {
     }
 
     public void cancel(String reason) {
+        cancel(reason, "WEB");
+    }
+
+    public void cancel(String reason, String source) {
         if (!"CONFIRMED".equals(status)) {
             throw new IllegalStateException("appointment status is not cancellable");
         }
         status = "CANCELLED";
         cancelledAt = OffsetDateTime.now();
         cancelReason = reason;
-        cancelSource = "WEB";
+        cancelSource = source == null || source.isBlank() ? "WEB" : source;
     }
 }

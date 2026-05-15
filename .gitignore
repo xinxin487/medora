@@ -10,7 +10,6 @@ Thumbs.db
 *.log
 logs/
 
-docs/
 
 # Env files
 .env

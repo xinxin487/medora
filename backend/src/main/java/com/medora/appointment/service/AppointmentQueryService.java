@@ -37,7 +37,12 @@ public class AppointmentQueryService {
 
     @Transactional(readOnly = true)
     public PageResponse<AppointmentItem> listMine(AppointmentListQuery query) {
-        UserAccountEntity userAccount = getCurrentUserAccount();
+        return listMineForUser(getCurrentUserAccount().getId(), query);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<AppointmentItem> listMineForUser(Long userAccountId, AppointmentListQuery query) {
+        UserAccountEntity userAccount = getUserAccount(userAccountId);
         Pageable pageable = PageRequest.of(normalizePageNo(query.pageNo()), normalizePageSize(query.pageSize()));
         var page = appointmentRepository.searchMine(
                 userAccount,
@@ -51,7 +56,12 @@ public class AppointmentQueryService {
 
     @Transactional(readOnly = true)
     public AppointmentDetailResponse getMine(String appointmentId) {
-        UserAccountEntity userAccount = getCurrentUserAccount();
+        return getMineForUser(getCurrentUserAccount().getId(), appointmentId);
+    }
+
+    @Transactional(readOnly = true)
+    public AppointmentDetailResponse getMineForUser(Long userAccountId, String appointmentId) {
+        UserAccountEntity userAccount = getUserAccount(userAccountId);
         return appointmentRepository.findDetail(parseUuid(appointmentId, "appointmentId"), userAccount)
                 .map(AppointmentResponseMapper::toDetail)
                 .orElseThrow(() -> new BusinessException("APPOINTMENT_NOT_FOUND", HttpStatus.NOT_FOUND,
@@ -61,6 +71,12 @@ public class AppointmentQueryService {
     private UserAccountEntity getCurrentUserAccount() {
         AuthenticatedUser authenticatedUser = currentAuthenticatedUserProvider.getRequiredUser();
         return userAccountRepository.findByPublicId(authenticatedUser.userPublicId())
+                .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", HttpStatus.NOT_FOUND,
+                        "current user not found"));
+    }
+
+    private UserAccountEntity getUserAccount(Long userAccountId) {
+        return userAccountRepository.findById(userAccountId)
                 .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", HttpStatus.NOT_FOUND,
                         "current user not found"));
     }

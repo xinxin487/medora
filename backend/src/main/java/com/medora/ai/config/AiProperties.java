@@ -8,11 +8,13 @@ import org.springframework.stereotype.Component;
 public class AiProperties {
 
     private String provider = "local-hash";
+    private String chatProvider = "local";
     private String apiKey = "";
     private String baseUrl = "https://api.openai.com/v1";
     private String chatModel = "gpt-4.1-mini";
     private String embeddingModel = "local-hash-1024";
     private int embeddingDimensions = 1024;
+    private boolean insecureTls = false;
 
     public String getProvider() {
         return provider;
@@ -20,6 +22,14 @@ public class AiProperties {
 
     public void setProvider(String provider) {
         this.provider = provider;
+    }
+
+    public String getChatProvider() {
+        return chatProvider;
+    }
+
+    public void setChatProvider(String chatProvider) {
+        this.chatProvider = chatProvider;
     }
 
     public String getApiKey() {
@@ -60,5 +70,13 @@ public class AiProperties {
 
     public void setEmbeddingDimensions(int embeddingDimensions) {
         this.embeddingDimensions = embeddingDimensions;
+    }
+
+    public boolean isInsecureTls() {
+        return insecureTls;
+    }
+
+    public void setInsecureTls(boolean insecureTls) {
+        this.insecureTls = insecureTls;
     }
 }
