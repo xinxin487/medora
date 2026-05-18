@@ -57,12 +57,21 @@ public class AgentModelGateway {
         return complete(systemPrompt(), userPrompt(userMessage, intent, retrievalResults, toolResults));
     }
 
+    public Optional<String> generateReply(String preparedUserPrompt) {
+        return complete(systemPrompt(), preparedUserPrompt);
+    }
+
     public Optional<String> generateReplyStreaming(String userMessage,
                                                    IntentDecision intent,
                                                    List<RetrievalResult> retrievalResults,
                                                    List<ToolExecutionResult> toolResults,
                                                    Consumer<String> deltaConsumer) {
         return completeStreaming(systemPrompt(), userPrompt(userMessage, intent, retrievalResults, toolResults), deltaConsumer);
+    }
+
+    public Optional<String> generateReplyStreaming(String preparedUserPrompt,
+                                                   Consumer<String> deltaConsumer) {
+        return completeStreaming(systemPrompt(), preparedUserPrompt, deltaConsumer);
     }
 
     public Optional<IntentDecision> planIntent(String userMessage) {
@@ -282,6 +291,7 @@ public class AgentModelGateway {
                 你是 Medora 医疗服务助手。你可以解释挂号规则、查询科室医生号源，并基于工具结果协助预约或取消挂号。
                 不提供诊断结论，不替代医生面诊。
                 业务事实必须以工具结果和知识引用为准，不得编造预约成功、取消成功或号源余量。
+                如果上下文中提供会话摘要、业务状态或长期记忆，要用它们保持多轮连续性，但不能用旧记忆覆盖当前用户输入、知识引用或实时工具结果。
                 如果工具结果缺少必要参数，要明确告诉用户需要补充什么。
                 当 queryScheduleSlots 返回号源时，必须逐条展示 slotId、日期、时段、科室、医生、剩余可约数量；如果用户想预约，只需要让用户回复对应 slotId。
                 当 bookAppointment 返回成功时，必须展示 appointmentId、appointmentNo、日期、时段、科室、医生；不要要求用户补充姓名、电话、身份证等当前工具不需要的字段。

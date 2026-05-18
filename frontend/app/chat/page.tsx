@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, startTransition, useEffect, useState } from "react";
+import { PatientShell } from "@/components/patient-shell";
 import { ApiClientError, apiFetch } from "@/lib/api/client";
 import { sendChatMessageStream } from "@/lib/sse/chat-stream";
 import type { PageResponse } from "@/lib/types";
@@ -37,19 +38,29 @@ type ToolStatusData = {
   message?: string;
 };
 
+const quickPrompts = [
+  "我最近咳嗽，应该挂哪个科？",
+  "帮我看看明天下午还有没有号源。",
+  "我已经预约了，下次复诊前需要注意什么？",
+];
+
+const assistantCapabilities = [
+  "根据问题判断更适合的科室方向",
+  "结合知识库引用解释常见挂号与就诊规则",
+  "在对话里联动真实号源查询、预约和取消动作",
+];
+
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("我最近咳嗽，应该挂哪个科？");
-  const [status, setStatus] = useState("准备进行 Phase 6 Agent 联调。");
+  const [status, setStatus] = useState("在这里继续你的导诊、挂号和追问流程。");
   const [error, setError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
 
-  const activeConversation = useMemo(
-    () => conversations.find((item) => item.conversationId === activeConversationId) ?? null,
-    [activeConversationId, conversations],
-  );
+  const activeConversation =
+    conversations.find((item) => item.conversationId === activeConversationId) ?? null;
 
   useEffect(() => {
     void loadConversations();
@@ -66,7 +77,7 @@ export default function ChatPage() {
       const result = await apiFetch<PageResponse<Conversation>>("/chat/conversations?pageSize=20");
       setConversations(result.list);
       if (!activeConversationId && result.list[0]) {
-        setActiveConversationId(result.list[0].conversationId);
+        startTransition(() => setActiveConversationId(result.list[0].conversationId));
       }
     }, false);
   }
@@ -81,9 +92,9 @@ export default function ChatPage() {
         }),
       });
       setConversations((current) => [conversation, ...current]);
-      setActiveConversationId(conversation.conversationId);
+      startTransition(() => setActiveConversationId(conversation.conversationId));
       setMessages([]);
-      setStatus("新会话已创建。");
+      setStatus("已创建新会话，可以继续问诊或预约。");
     });
   }
 
@@ -99,7 +110,7 @@ export default function ChatPage() {
       }),
     });
     setConversations((current) => [conversation, ...current]);
-    setActiveConversationId(conversation.conversationId);
+    startTransition(() => setActiveConversationId(conversation.conversationId));
     return conversation.conversationId;
   }
 
@@ -109,7 +120,7 @@ export default function ChatPage() {
         `/chat/conversations/${conversationId}/messages?pageSize=100`,
       );
       setMessages(result.list);
-      setStatus(`已读取 ${result.list.length} 条消息。`);
+      setStatus(`已载入 ${result.list.length} 条消息。`);
     }, false);
   }
 
@@ -157,7 +168,7 @@ export default function ChatPage() {
         sceneType: activeConversation?.sceneType ?? "GENERAL",
         onEvent: (streamEvent) => {
           if (streamEvent.event === "message_start") {
-            setStatus(`助手消息生成中：${streamEvent.data.traceId}`);
+            setStatus(`助手正在生成回复：${streamEvent.data.traceId}`);
             setMessages((current) =>
               current.map((item) =>
                 item.messageId === localAssistantId
@@ -170,7 +181,7 @@ export default function ChatPage() {
           if (streamEvent.event === "message_delta") {
             setMessages((current) =>
               current.map((item) =>
-                item.messageId === localAssistantId || item.pending && item.role === "ASSISTANT"
+                item.messageId === localAssistantId || (item.pending && item.role === "ASSISTANT")
                   ? { ...item, content: `${item.content}${streamEvent.data.delta}` }
                   : item,
               ),
@@ -178,7 +189,7 @@ export default function ChatPage() {
           }
 
           if (streamEvent.event === "message_end") {
-            setStatus("回复已完成并落库。");
+            setStatus("回复已完成，并已同步到会话历史。");
           }
 
           if (streamEvent.event === "citation") {
@@ -239,74 +250,111 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#fbfaf6] px-4 py-6 text-slate-950 sm:px-6">
-      <section className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[320px_1fr]">
-        <aside className="flex min-h-[calc(100vh-3rem)] flex-col border-r border-slate-200 bg-white px-4 py-5">
+    <PatientShell
+      eyebrow="Clinical Assistant"
+      title="把导诊、知识问答和实际挂号动作，收进同一个连续对话工作台里。"
+      description="导诊助手不再只是一个裸聊天框。它会话可追溯、支持引用、可执行真实工具动作，并能与预约流程自然接续。"
+      actions={
+        <>
+          <button
+            className="rounded-full bg-[var(--ink-strong)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+            disabled={isStreaming}
+            onClick={() => void createConversation()}
+            type="button"
+          >
+            新建会话
+          </button>
+          <Link
+            href="/appointments"
+            className="rounded-full border border-[var(--accent-main)] bg-[rgba(31,92,82,0.08)] px-5 py-3 text-sm font-semibold text-[var(--accent-main)]"
+          >
+            去预约中心
+          </Link>
+        </>
+      }
+    >
+      <div className="grid gap-5 xl:grid-cols-[280px_1fr_320px]">
+        <aside className="medora-surface border border-[var(--line-soft)] px-4 py-5">
           <div className="flex items-center justify-between gap-3">
-            <Link href="/" className="text-sm font-semibold text-emerald-700">
-              Medora
-            </Link>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent-main)]">
+                Conversations
+              </p>
+              <h2 className="mt-3 text-xl font-semibold">会话列表</h2>
+            </div>
             <button
-              className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              className="rounded-full border border-[var(--line-soft)] px-3 py-2 text-sm font-semibold text-[var(--ink-body)] disabled:opacity-60"
               disabled={isStreaming}
               onClick={() => void createConversation()}
               type="button"
             >
-              新会话
+              新建
             </button>
           </div>
 
-          <div className="mt-5 flex-1 space-y-2 overflow-y-auto">
+          <div className="mt-5 space-y-2">
             {conversations.length === 0 ? (
-              <p className="rounded-lg bg-slate-50 px-3 py-4 text-sm text-slate-500">
-                暂无会话。
-              </p>
+              <EmptyState text="还没有会话，先从右侧提问开始。" />
             ) : (
               conversations.map((conversation) => (
                 <button
                   key={conversation.conversationId}
-                  className={`w-full rounded-lg border px-3 py-3 text-left text-sm transition ${
+                  className={`w-full rounded-[1.2rem] border px-4 py-4 text-left transition ${
                     conversation.conversationId === activeConversationId
-                      ? "border-emerald-500 bg-emerald-50 text-emerald-950"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                      ? "border-[var(--accent-main)] bg-[rgba(31,92,82,0.08)]"
+                      : "border-[rgba(20,42,39,0.08)] bg-white/78 hover:border-[var(--accent-warm)]"
                   }`}
                   disabled={isStreaming}
-                  onClick={() => setActiveConversationId(conversation.conversationId)}
+                  onClick={() => startTransition(() => setActiveConversationId(conversation.conversationId))}
                   type="button"
                 >
-                  <span className="block font-semibold">{conversation.title}</span>
-                  <span className="mt-1 block text-xs text-slate-500">
-                    {conversation.status} · {conversation.sceneType}
+                  <span className="block font-semibold text-[var(--ink-strong)]">{conversation.title}</span>
+                  <span className="mt-2 block text-xs leading-6 text-[var(--ink-subtle)]">
+                    {conversation.sceneType} · {conversation.status}
                   </span>
                 </button>
               ))
             )}
           </div>
-
-          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 text-slate-600">
-            {status}
-          </div>
-          {error ? (
-            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm leading-6 text-rose-700">
-              {error}
-            </div>
-          ) : null}
         </aside>
 
-        <section className="flex min-h-[calc(100vh-3rem)] flex-col bg-white">
-          <header className="border-b border-slate-200 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Phase 6 Agent
+        <section className="medora-surface border border-[var(--line-soft)]">
+          <header className="border-b border-[rgba(20,42,39,0.08)] px-5 py-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ink-subtle)]">
+              Active Dialogue
             </p>
-            <h1 className="mt-2 text-2xl font-semibold">
-              {activeConversation?.title ?? "导诊咨询"}
-            </h1>
+            <h2 className="mt-3 text-2xl font-semibold">
+              {activeConversation?.title ?? "新的导诊会话"}
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-[var(--ink-body)]">{status}</p>
+            {error ? (
+              <div className="mt-4 rounded-[1.2rem] border border-[rgba(190,92,67,0.18)] bg-[var(--danger-soft)] px-4 py-3 text-sm leading-6 text-[#8a4a3a]">
+                {error}
+              </div>
+            ) : null}
           </header>
 
-          <div className="flex-1 space-y-4 overflow-y-auto px-5 py-6">
+          <div className="min-h-[420px] space-y-5 overflow-y-auto px-5 py-6">
             {messages.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                创建会话后即可发送消息。
+              <div className="grid gap-4">
+                <div className="rounded-[1.5rem] border border-[rgba(20,42,39,0.08)] bg-[rgba(237,243,238,0.6)] px-5 py-6">
+                  <p className="medora-display text-2xl font-semibold">从这里开始一次更像真实服务的医疗对话。</p>
+                  <p className="mt-3 text-sm leading-7 text-[var(--ink-body)]">
+                    你可以直接问挂什么科、是否还有号、怎么取消预约，或者继续追问就诊准备事项。
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {quickPrompts.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => setDraft(prompt)}
+                      className="rounded-full border border-[var(--line-soft)] bg-white/80 px-4 py-2 text-sm font-semibold text-[var(--ink-body)] transition hover:border-[var(--accent-main)] hover:text-[var(--accent-main)]"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : (
               messages.map((message) => (
@@ -315,24 +363,27 @@ export default function ChatPage() {
                   className={`flex ${message.role === "USER" ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[78%] rounded-lg px-4 py-3 text-sm leading-7 ${
+                    className={`max-w-[82%] rounded-[1.4rem] px-4 py-4 text-sm leading-7 ${
                       message.role === "USER"
-                        ? "bg-slate-950 text-white"
-                        : "border border-slate-200 bg-slate-50 text-slate-800"
+                        ? "bg-[var(--ink-strong)] text-white shadow-[0_18px_36px_rgba(20,42,39,0.14)]"
+                        : "border border-[rgba(20,42,39,0.08)] bg-[rgba(237,243,238,0.58)] text-[var(--ink-strong)]"
                     }`}
                   >
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] opacity-70">
+                      {message.role === "USER" ? "You" : "Medora"}
+                    </div>
                     {message.content || (message.pending ? "正在生成..." : "")}
                     {message.role === "ASSISTANT" && parseCitations(message.citations).length > 0 ? (
-                      <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+                      <div className="mt-4 space-y-3 border-t border-[rgba(20,42,39,0.1)] pt-4">
                         {parseCitations(message.citations).map((citation, index) => (
                           <div
-                            className="rounded-md bg-white px-3 py-2 text-xs leading-5 text-slate-600"
+                            className="rounded-[1.1rem] border border-[rgba(20,42,39,0.08)] bg-white/88 px-3 py-3 text-xs leading-6 text-[var(--ink-body)]"
                             key={`${message.messageId}-citation-${citation.sourceId ?? index}`}
                           >
-                            <div className="font-semibold text-emerald-700">
+                            <div className="font-semibold text-[var(--accent-main)]">
                               [{citation.index ?? index + 1}] {citation.title ?? "知识库引用"}
                             </div>
-                            <div>{citation.snippet}</div>
+                            <div className="mt-1">{citation.snippet}</div>
                           </div>
                         ))}
                       </div>
@@ -343,26 +394,90 @@ export default function ChatPage() {
             )}
           </div>
 
-          <form className="border-t border-slate-200 p-4" onSubmit={sendMessage}>
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-              <textarea
-                className="min-h-24 resize-none rounded-lg border border-slate-200 px-4 py-3 text-sm leading-6 outline-none focus:border-emerald-500"
-                disabled={isStreaming}
-                onChange={(event) => setDraft(event.target.value)}
-                value={draft}
-              />
-              <button
-                className="rounded-lg bg-emerald-700 px-6 py-3 text-sm font-semibold text-white disabled:opacity-60"
-                disabled={isStreaming || !draft.trim()}
-                type="submit"
-              >
-                {isStreaming ? "发送中" : "发送"}
-              </button>
+          <form className="border-t border-[rgba(20,42,39,0.08)] p-4" onSubmit={sendMessage}>
+            <div className="grid gap-3">
+              <div className="flex flex-wrap gap-2">
+                {quickPrompts.map((prompt) => (
+                  <button
+                    key={`chip-${prompt}`}
+                    type="button"
+                    onClick={() => setDraft(prompt)}
+                    className="rounded-full border border-[var(--line-soft)] bg-white/82 px-3 py-2 text-xs font-semibold text-[var(--ink-body)] transition hover:border-[var(--accent-main)] hover:text-[var(--accent-main)]"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                <textarea
+                  className="min-h-28 resize-none rounded-[1.2rem] border border-[var(--line-soft)] bg-white/84 px-4 py-4 text-sm leading-7 text-[var(--ink-strong)] outline-none transition focus:border-[var(--accent-main)]"
+                  disabled={isStreaming}
+                  onChange={(event) => setDraft(event.target.value)}
+                  value={draft}
+                />
+                <button
+                  className="rounded-[1.2rem] bg-[var(--accent-main)] px-6 py-4 text-sm font-semibold text-white disabled:opacity-60"
+                  disabled={isStreaming || !draft.trim()}
+                  type="submit"
+                >
+                  {isStreaming ? "发送中" : "发送消息"}
+                </button>
+              </div>
             </div>
           </form>
         </section>
-      </section>
-    </main>
+
+        <aside className="space-y-5">
+          <div className="medora-surface border border-[var(--line-soft)] bg-[linear-gradient(180deg,rgba(237,243,238,0.92),rgba(255,255,255,0.9))] px-5 py-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ink-subtle)]">
+              Assistant Scope
+            </p>
+            <h2 className="mt-4 text-xl font-semibold">Medora 当前能帮你做什么</h2>
+            <ul className="mt-5 space-y-3">
+              {assistantCapabilities.map((item) => (
+                <li
+                  key={item}
+                  className="rounded-[1.2rem] border border-[rgba(20,42,39,0.08)] bg-white/76 px-4 py-4 text-sm leading-7 text-[var(--ink-body)]"
+                >
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="medora-surface border border-[var(--line-soft)] px-5 py-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent-main)]">
+              Suggested Next Step
+            </p>
+            <div className="mt-5 rounded-[1.3rem] border border-[rgba(31,92,82,0.14)] bg-[rgba(31,92,82,0.06)] px-4 py-4 text-sm leading-7 text-[var(--ink-body)]">
+              如果你已经确定就诊方向，可以直接切到预约中心查看实时号源；如果还不确定，继续追问症状和科室建议即可。
+            </div>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link
+                href="/appointments"
+                className="rounded-full bg-[var(--ink-strong)] px-4 py-3 text-sm font-semibold text-white"
+              >
+                去预约中心
+              </Link>
+              <Link
+                href="/login"
+                className="rounded-full border border-[var(--line-soft)] px-4 py-3 text-sm font-semibold text-[var(--ink-body)]"
+              >
+                查看账户状态
+              </Link>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </PatientShell>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="rounded-[1.3rem] border border-dashed border-[var(--line-soft)] bg-[rgba(255,255,255,0.68)] px-4 py-8 text-sm leading-7 text-[var(--ink-subtle)]">
+      {text}
+    </div>
   );
 }
 

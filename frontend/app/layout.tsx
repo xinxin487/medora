@@ -3,7 +3,7 @@ import "@/styles/globals.css";
 
 export const metadata: Metadata = {
   title: "Medora",
-  description: "Medical service assistant project scaffold",
+  description: "A human-centered medical access experience for appointments and AI-guided triage.",
 };
 
 export default function RootLayout({

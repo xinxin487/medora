@@ -2,6 +2,7 @@ package com.medora.agent.trace;
 
 import com.medora.chat.domain.ChatMessageEntity;
 import com.medora.chat.domain.ConversationEntity;
+import com.medora.common.metrics.MedoraMetricsService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -9,9 +10,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class AgentTraceService {
 
     private final AgentTraceRepository agentTraceRepository;
+    private final MedoraMetricsService medoraMetricsService;
 
-    public AgentTraceService(AgentTraceRepository agentTraceRepository) {
+    public AgentTraceService(AgentTraceRepository agentTraceRepository,
+                             MedoraMetricsService medoraMetricsService) {
         this.agentTraceRepository = agentTraceRepository;
+        this.medoraMetricsService = medoraMetricsService;
     }
 
     @Transactional
@@ -28,6 +32,12 @@ public class AgentTraceService {
                 record.status(),
                 record.errorMessage()
         ));
+        medoraMetricsService.recordAgentTrace(
+                record.intentType(),
+                record.routeMode(),
+                record.status(),
+                record.latencyMs()
+        );
     }
 
     public record AgentTraceRecord(

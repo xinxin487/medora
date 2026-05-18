@@ -5,6 +5,7 @@ import com.medora.auth.repository.UserAccountRepository;
 import com.medora.auth.security.AuthenticatedUser;
 import com.medora.auth.security.CurrentAuthenticatedUserProvider;
 import com.medora.common.api.PageResponse;
+import com.medora.common.audit.AuditLogService;
 import com.medora.common.exception.BusinessException;
 import com.medora.knowledge.api.query.KnowledgeDocumentListQuery;
 import com.medora.knowledge.api.request.KnowledgePublishRequest;
@@ -46,6 +47,7 @@ public class KnowledgeDocumentService {
     private final DocumentParser documentParser;
     private final DocumentIngestService documentIngestService;
     private final KnowledgeJsonService knowledgeJsonService;
+    private final AuditLogService auditLogService;
 
     public KnowledgeDocumentService(KnowledgeDocumentRepository knowledgeDocumentRepository,
                                     KnowledgeChunkRepository knowledgeChunkRepository,
@@ -53,7 +55,8 @@ public class KnowledgeDocumentService {
                                     CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider,
                                     DocumentParser documentParser,
                                     DocumentIngestService documentIngestService,
-                                    KnowledgeJsonService knowledgeJsonService) {
+                                    KnowledgeJsonService knowledgeJsonService,
+                                    AuditLogService auditLogService) {
         this.knowledgeDocumentRepository = knowledgeDocumentRepository;
         this.knowledgeChunkRepository = knowledgeChunkRepository;
         this.userAccountRepository = userAccountRepository;
@@ -61,6 +64,7 @@ public class KnowledgeDocumentService {
         this.documentParser = documentParser;
         this.documentIngestService = documentIngestService;
         this.knowledgeJsonService = knowledgeJsonService;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -90,6 +94,19 @@ public class KnowledgeDocumentService {
         ));
 
         int chunkCount = documentIngestService.ingest(document, parsed.content());
+        auditLogService.record(
+                uploader,
+                "ADMIN",
+                "KB_DOCUMENT_UPLOAD",
+                "KNOWLEDGE_DOCUMENT",
+                document.getPublicId().toString(),
+                Map.of(
+                        "title", document.getTitle(),
+                        "bizScope", document.getBizScope(),
+                        "chunkCount", chunkCount,
+                        "publishStatus", document.getPublishStatus()
+                )
+        );
         return new KnowledgeUploadResponse(
                 document.getPublicId().toString(),
                 document.getTitle(),
@@ -123,6 +140,18 @@ public class KnowledgeDocumentService {
     public KnowledgeDocumentResponse rebuild(String documentId) {
         KnowledgeDocumentEntity document = findByPublicId(documentId);
         documentIngestService.rebuildEmbeddings(document);
+        auditLogService.record(
+                getCurrentUserAccount(),
+                "ADMIN",
+                "KB_DOCUMENT_REBUILD",
+                "KNOWLEDGE_DOCUMENT",
+                document.getPublicId().toString(),
+                Map.of(
+                        "title", document.getTitle(),
+                        "bizScope", document.getBizScope(),
+                        "ingestStatus", document.getIngestStatus()
+                )
+        );
         return KnowledgeDocumentMapper.toResponse(document, knowledgeChunkRepository);
     }
 
@@ -142,6 +171,18 @@ public class KnowledgeDocumentService {
             throw new BusinessException("COMMON_INVALID_PARAM", HttpStatus.BAD_REQUEST,
                     "publishAction must be PUBLISH or OFFLINE");
         }
+        auditLogService.record(
+                getCurrentUserAccount(),
+                "ADMIN",
+                "KB_DOCUMENT_PUBLISH",
+                "KNOWLEDGE_DOCUMENT",
+                document.getPublicId().toString(),
+                Map.of(
+                        "title", document.getTitle(),
+                        "action", action,
+                        "publishStatus", document.getPublishStatus()
+                )
+        );
         return KnowledgeDocumentMapper.toResponse(document, knowledgeChunkRepository);
     }
 

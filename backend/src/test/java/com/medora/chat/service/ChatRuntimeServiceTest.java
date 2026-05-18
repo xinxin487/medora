@@ -7,6 +7,8 @@ import com.medora.auth.security.CurrentAuthenticatedUserProvider;
 import com.medora.chat.repository.ChatMessageRepository;
 import com.medora.chat.repository.ConversationRepository;
 import com.medora.chat.sse.StreamEventPublisher;
+import com.medora.memory.service.ConversationSummaryService;
+import com.medora.memory.service.MemoryService;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -27,7 +29,9 @@ class ChatRuntimeServiceTest {
                 new SyncTaskExecutor(),
                 mock(StreamEventPublisher.class),
                 mock(ChatOrchestrator.class),
-                mock(AgentTraceService.class)
+                mock(AgentTraceService.class),
+                mock(ConversationSummaryService.class),
+                mock(MemoryService.class)
         );
 
         String reply = service.buildStubAssistantReply("我最近咳嗽，应该挂哪个科？");

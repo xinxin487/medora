@@ -10,6 +10,7 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.slf4j.MDC;
 
 import java.io.IOException;
 
@@ -38,8 +39,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         );
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                MDC.put("userId", authenticatedUser.userPublicId().toString());
+                MDC.put("userRoles", String.join(",", authenticatedUser.roles()));
             } catch (RuntimeException ex) {
                 SecurityContextHolder.clearContext();
+                MDC.remove("userId");
+                MDC.remove("userRoles");
             }
         }
 

@@ -10,6 +10,8 @@ import com.medora.auth.domain.UserAccountEntity;
 import com.medora.auth.repository.UserAccountRepository;
 import com.medora.auth.security.AuthenticatedUser;
 import com.medora.auth.security.CurrentAuthenticatedUserProvider;
+import com.medora.common.audit.AuditLogService;
+import com.medora.common.metrics.MedoraMetricsService;
 import com.medora.masterdata.domain.DepartmentEntity;
 import com.medora.masterdata.domain.DoctorEntity;
 import com.medora.masterdata.domain.ScheduleSlotEntity;
@@ -38,6 +40,8 @@ class AppointmentCommandServiceTest {
     private ScheduleSlotRepository scheduleSlotRepository;
     private AppointmentRepository appointmentRepository;
     private AppointmentOperationLogRepository operationLogRepository;
+    private AuditLogService auditLogService;
+    private MedoraMetricsService medoraMetricsService;
     private AppointmentCommandService service;
 
     @BeforeEach
@@ -47,12 +51,16 @@ class AppointmentCommandServiceTest {
         scheduleSlotRepository = mock(ScheduleSlotRepository.class);
         appointmentRepository = mock(AppointmentRepository.class);
         operationLogRepository = mock(AppointmentOperationLogRepository.class);
+        auditLogService = mock(AuditLogService.class);
+        medoraMetricsService = mock(MedoraMetricsService.class);
         service = new AppointmentCommandService(
                 currentAuthenticatedUserProvider,
                 userAccountRepository,
                 scheduleSlotRepository,
                 appointmentRepository,
-                operationLogRepository
+                operationLogRepository,
+                auditLogService,
+                medoraMetricsService
         );
     }
 
@@ -82,6 +90,8 @@ class AppointmentCommandServiceTest {
         assertEquals("CONFIRMED", response.status());
         assertEquals(1, slot.getAvailableQuota());
         verify(operationLogRepository).save(any(AppointmentOperationLogEntity.class));
+        verify(auditLogService).record(any(), any(), any(), any(), any(), any());
+        verify(medoraMetricsService).recordAppointmentCommand("CREATE", "SUCCESS");
     }
 
     @Test
@@ -128,6 +138,8 @@ class AppointmentCommandServiceTest {
         assertEquals(1, slot.getAvailableQuota());
         assertEquals("OPEN", slot.getStatus());
         verify(operationLogRepository).save(any(AppointmentOperationLogEntity.class));
+        verify(auditLogService).record(any(), any(), any(), any(), any(), any());
+        verify(medoraMetricsService).recordAppointmentCommand("CANCEL", "SUCCESS");
     }
 
     private UserAccountEntity buildUser(UUID userId) {

@@ -15,6 +15,8 @@ import com.medora.chat.repository.ChatMessageRepository;
 import com.medora.chat.repository.ConversationRepository;
 import com.medora.chat.sse.StreamEventPublisher;
 import com.medora.common.exception.BusinessException;
+import com.medora.memory.service.ConversationSummaryService;
+import com.medora.memory.service.MemoryService;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -39,6 +41,8 @@ public class ChatRuntimeService {
     private final StreamEventPublisher streamEventPublisher;
     private final ChatOrchestrator chatOrchestrator;
     private final AgentTraceService agentTraceService;
+    private final ConversationSummaryService conversationSummaryService;
+    private final MemoryService memoryService;
 
     public ChatRuntimeService(CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider,
                               UserAccountRepository userAccountRepository,
@@ -48,7 +52,9 @@ public class ChatRuntimeService {
                               TaskExecutor taskExecutor,
                               StreamEventPublisher streamEventPublisher,
                               ChatOrchestrator chatOrchestrator,
-                              AgentTraceService agentTraceService) {
+                              AgentTraceService agentTraceService,
+                              ConversationSummaryService conversationSummaryService,
+                              MemoryService memoryService) {
         this.currentAuthenticatedUserProvider = currentAuthenticatedUserProvider;
         this.userAccountRepository = userAccountRepository;
         this.conversationRepository = conversationRepository;
@@ -58,6 +64,8 @@ public class ChatRuntimeService {
         this.streamEventPublisher = streamEventPublisher;
         this.chatOrchestrator = chatOrchestrator;
         this.agentTraceService = agentTraceService;
+        this.conversationSummaryService = conversationSummaryService;
+        this.memoryService = memoryService;
     }
 
     public SseEmitter stream(String conversationId, ChatStreamRequest request) {
@@ -104,6 +112,7 @@ public class ChatRuntimeService {
                     session.assistantMessageId(),
                     session.conversationId(),
                     session.traceId(),
+                    request.message(),
                     reply,
                     agentRunResult,
                     elapsedMillis(startedAt)
@@ -154,6 +163,7 @@ public class ChatRuntimeService {
     private void completeAssistantMessage(Long assistantMessageId,
                                           Long conversationId,
                                           String traceId,
+                                          String userMessage,
                                           String reply,
                                           AgentRunResult agentRunResult,
                                           long latencyMs) {
@@ -163,7 +173,7 @@ public class ChatRuntimeService {
                             "assistant message not found"));
             assistantMessage.completeAssistantContent(
                     reply,
-                    "{\"inputTokens\":0,\"outputTokens\":0}",
+                    agentRunResult.tokenUsageJson(),
                     agentRunResult.citationJson(),
                     agentRunResult.toolCallJson()
             );
@@ -183,6 +193,8 @@ public class ChatRuntimeService {
                     "SUCCESS",
                     null
             ));
+            conversationSummaryService.refreshAfterAssistantReply(conversation, userMessage, reply, agentRunResult);
+            memoryService.captureFromAgentRun(conversation.getUserAccount(), userMessage, agentRunResult);
         });
     }
 

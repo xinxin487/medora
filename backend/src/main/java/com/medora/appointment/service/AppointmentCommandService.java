@@ -12,7 +12,9 @@ import com.medora.auth.domain.UserAccountEntity;
 import com.medora.auth.repository.UserAccountRepository;
 import com.medora.auth.security.AuthenticatedUser;
 import com.medora.auth.security.CurrentAuthenticatedUserProvider;
+import com.medora.common.audit.AuditLogService;
 import com.medora.common.exception.BusinessException;
+import com.medora.common.metrics.MedoraMetricsService;
 import com.medora.common.web.RequestMetadata;
 import com.medora.masterdata.domain.ScheduleSlotEntity;
 import com.medora.masterdata.repository.ScheduleSlotRepository;
@@ -23,6 +25,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -35,17 +38,23 @@ public class AppointmentCommandService {
     private final ScheduleSlotRepository scheduleSlotRepository;
     private final AppointmentRepository appointmentRepository;
     private final AppointmentOperationLogRepository operationLogRepository;
+    private final AuditLogService auditLogService;
+    private final MedoraMetricsService medoraMetricsService;
 
     public AppointmentCommandService(CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider,
                                      UserAccountRepository userAccountRepository,
                                      ScheduleSlotRepository scheduleSlotRepository,
                                      AppointmentRepository appointmentRepository,
-                                     AppointmentOperationLogRepository operationLogRepository) {
+                                     AppointmentOperationLogRepository operationLogRepository,
+                                     AuditLogService auditLogService,
+                                     MedoraMetricsService medoraMetricsService) {
         this.currentAuthenticatedUserProvider = currentAuthenticatedUserProvider;
         this.userAccountRepository = userAccountRepository;
         this.scheduleSlotRepository = scheduleSlotRepository;
         this.appointmentRepository = appointmentRepository;
         this.operationLogRepository = operationLogRepository;
+        this.auditLogService = auditLogService;
+        this.medoraMetricsService = medoraMetricsService;
     }
 
     @Transactional
@@ -107,6 +116,20 @@ public class AppointmentCommandService {
                 saved.getStatus(),
                 "{\"source\":\"" + normalizeSource(source) + "\"}"
         ));
+        auditLogService.record(
+                userAccount,
+                resolveOperatorType(source),
+                "APPOINTMENT_CREATE",
+                "APPOINTMENT",
+                saved.getPublicId().toString(),
+                Map.of(
+                        "appointmentNo", saved.getAppointmentNo(),
+                        "slotId", slot.getPublicId().toString(),
+                        "source", normalizeSource(source),
+                        "status", saved.getStatus()
+                )
+        );
+        medoraMetricsService.recordAppointmentCommand("CREATE", "SUCCESS");
         return AppointmentResponseMapper.toResponse(saved);
     }
 
@@ -156,6 +179,21 @@ public class AppointmentCommandService {
                 appointment.getStatus(),
                 "{\"source\":\"" + normalizeSource(source) + "\"}"
         ));
+        auditLogService.record(
+                userAccount,
+                resolveOperatorType(source),
+                "APPOINTMENT_CANCEL",
+                "APPOINTMENT",
+                appointment.getPublicId().toString(),
+                Map.of(
+                        "appointmentNo", appointment.getAppointmentNo(),
+                        "slotId", slot.getPublicId().toString(),
+                        "source", normalizeSource(source),
+                        "beforeStatus", beforeStatus,
+                        "afterStatus", appointment.getStatus()
+                )
+        );
+        medoraMetricsService.recordAppointmentCommand("CANCEL", "SUCCESS");
         return AppointmentResponseMapper.toCancelResponse(appointment);
     }
 
@@ -190,6 +228,10 @@ public class AppointmentCommandService {
 
     private String normalizeSource(String source) {
         return StringUtils.hasText(source) ? source.trim().toUpperCase() : "WEB";
+    }
+
+    private String resolveOperatorType(String source) {
+        return "AGENT".equals(normalizeSource(source)) ? "AGENT" : "USER";
     }
 
     private String generateAppointmentNo() {

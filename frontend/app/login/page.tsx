@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
+import { PatientShell } from "@/components/patient-shell";
 import { ApiClientError, apiFetch } from "@/lib/api/client";
 import { clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/lib/auth/token";
 
@@ -38,6 +40,12 @@ type CurrentUser = {
   roles: string[];
 };
 
+const accountBenefits = [
+  "保存登录态和个人默认偏好",
+  "在预约中心快速复用上次选择",
+  "让导诊助手和预约服务共享同一用户身份",
+];
+
 export default function LoginPage() {
   const [loginForm, setLoginForm] = useState({
     account: "demo@example.com",
@@ -60,7 +68,7 @@ export default function LoginPage() {
     hasRefreshToken: false,
   });
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
-  const [message, setMessage] = useState("准备联调 Phase 2 认证链路。");
+  const [message, setMessage] = useState("欢迎来到 Medora 账户中心。");
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
@@ -82,7 +90,7 @@ export default function LoginPage() {
         },
         { withAuth: false },
       );
-      setMessage(`注册成功：${result.displayName}，现在可以直接登录。`);
+      setMessage(`注册成功：${result.displayName}。你现在可以直接登录。`);
       setLoginForm((prev) => ({
         ...prev,
         account: registerForm.email || registerForm.mobile,
@@ -104,7 +112,7 @@ export default function LoginPage() {
       );
       setTokens(result.accessToken, result.refreshToken);
       syncTokenState();
-      setMessage(`登录成功：${result.user.displayName}，Token 已写入本地存储。`);
+      setMessage(`欢迎回来，${result.user.displayName}。账户已接入预约和导诊服务。`);
       await loadCurrentUser();
     });
   }
@@ -118,7 +126,7 @@ export default function LoginPage() {
         defaultHospitalCode: result.defaultHospitalCode ?? "MAIN",
         defaultDepartmentId: result.defaultDepartment?.departmentId ?? "",
       });
-      setMessage(`已读取当前用户：${result.displayName}`);
+      setMessage(`当前账户：${result.displayName}`);
     }, false);
   }
 
@@ -130,7 +138,7 @@ export default function LoginPage() {
         body: JSON.stringify(profileForm),
       });
       setCurrentUser(result);
-      setMessage(`资料更新成功：${result.displayName}`);
+      setMessage(`个人资料已更新：${result.displayName}`);
     });
   }
 
@@ -150,7 +158,7 @@ export default function LoginPage() {
       clearTokens();
       syncTokenState();
       setCurrentUser(null);
-      setMessage("已清除本地 token，并请求后端注销 refresh token。");
+      setMessage("你已退出账户，本地令牌也已清除。");
     });
   }
 
@@ -184,156 +192,234 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen px-6 py-10">
-      <section className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-[2rem] border border-white/70 bg-white/75 p-8 shadow-[0_24px_70px_rgba(15,23,42,0.08)] backdrop-blur">
-          <p className="text-xs font-semibold uppercase tracking-[0.26em] text-emerald-700">
-            Phase 2 Workflow
-          </p>
-          <h1 className="mt-4 text-4xl font-semibold leading-tight text-slate-900">
-            注册、登录、读取当前用户和资料更新，都可以在这一页直接联调。
-          </h1>
-          <p className="mt-5 text-base leading-8 text-slate-600">
-            这页优先验证接口链路是否跑通，而不是做成最终用户界面。Phase 2 验证通过后，我们就能继续接预约闭环。
-          </p>
-
-          <div className="mt-8 rounded-[1.75rem] border border-emerald-200 bg-emerald-50 p-5 text-sm leading-7 text-emerald-950">
-            <p className="font-semibold">当前状态</p>
-            <p className="mt-2">{message}</p>
+    <PatientShell
+      eyebrow="Account Center"
+      title="登录、注册和账户偏好，在同一页里组织成真正可用的账户体验。"
+      description="Medora 的账户页不只是为了拿 token。它承担用户身份、个人偏好、默认就诊设置和后续预约/导诊连续性的入口作用。"
+      actions={
+        <>
+          <Link
+            href="/appointments"
+            className="rounded-full bg-[var(--ink-strong)] px-5 py-3 text-sm font-semibold text-white"
+          >
+            去预约中心
+          </Link>
+          <Link
+            href="/chat"
+            className="rounded-full border border-[var(--accent-main)] bg-[rgba(31,92,82,0.08)] px-5 py-3 text-sm font-semibold text-[var(--accent-main)]"
+          >
+            去导诊助手
+          </Link>
+        </>
+      }
+    >
+      <div className="grid gap-5 lg:grid-cols-[0.92fr_1.08fr]">
+        <aside className="space-y-5">
+          <div className="medora-surface border border-[var(--line-soft)] px-5 py-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent-main)]">
+              Account Status
+            </p>
+            <p className="mt-4 text-sm leading-7 text-[var(--ink-body)]">{message}</p>
             {error ? (
-              <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
+              <div className="mt-4 rounded-[1.2rem] border border-[rgba(190,92,67,0.18)] bg-[var(--danger-soft)] px-4 py-3 text-sm leading-6 text-[#8a4a3a]">
                 {error}
-              </p>
+              </div>
             ) : null}
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <StatusCard label="Access Token" value={tokenState.hasAccessToken ? "已写入" : "未写入"} />
+              <StatusCard label="Refresh Token" value={tokenState.hasRefreshToken ? "已写入" : "未写入"} />
+              <StatusCard label="当前账户" value={currentUser ? currentUser.displayName : "未登录"} />
+              <StatusCard label="角色" value={currentUser ? currentUser.roles.join(", ") : "访客"} />
+            </div>
           </div>
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
-            <StatusCard
-              label="Access Token"
-              value={tokenState.hasAccessToken ? "已存在" : "未写入"}
-            />
-            <StatusCard
-              label="Refresh Token"
-              value={tokenState.hasRefreshToken ? "已存在" : "未写入"}
-            />
-            <StatusCard label="当前用户" value={currentUser ? currentUser.displayName : "未登录"} />
-            <StatusCard label="角色" value={currentUser ? currentUser.roles.join(", ") : "无"} />
+          <div className="medora-surface border border-[var(--line-soft)] bg-[linear-gradient(180deg,rgba(237,243,238,0.92),rgba(255,255,255,0.9))] px-5 py-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ink-subtle)]">
+              Why Sign In
+            </p>
+            <h2 className="medora-display mt-4 text-3xl font-semibold tracking-[-0.04em]">
+              账户不是障碍，而是让服务连续起来的锚点。
+            </h2>
+            <ul className="mt-5 space-y-3">
+              {accountBenefits.map((item) => (
+                <li
+                  key={item}
+                  className="rounded-[1.2rem] border border-[rgba(20,42,39,0.08)] bg-white/72 px-4 py-4 text-sm leading-7 text-[var(--ink-body)]"
+                >
+                  {item}
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
+        </aside>
 
-        <div className="grid gap-6">
-          <Panel title="注册" subtitle="创建普通用户账号，用于验证注册链路。">
-            <form className="grid gap-4" onSubmit={handleRegister}>
-              <Input
-                label="手机号"
-                value={registerForm.mobile}
-                onChange={(value) => setRegisterForm((prev) => ({ ...prev, mobile: value }))}
-              />
-              <Input
-                label="邮箱"
-                value={registerForm.email}
-                onChange={(value) => setRegisterForm((prev) => ({ ...prev, email: value }))}
-              />
-              <Input
-                label="密码"
-                type="password"
-                value={registerForm.password}
-                onChange={(value) => setRegisterForm((prev) => ({ ...prev, password: value }))}
-              />
-              <Input
-                label="显示名"
-                value={registerForm.displayName}
-                onChange={(value) => setRegisterForm((prev) => ({ ...prev, displayName: value }))}
-              />
-              <SubmitButton label="提交注册" busy={isBusy} />
-            </form>
-          </Panel>
+        <section className="space-y-5">
+          {currentUser ? (
+            <div className="grid gap-5 xl:grid-cols-[0.92fr_1.08fr]">
+              <div className="medora-surface border border-[var(--line-soft)] px-5 py-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent-main)]">
+                      Logged In
+                    </p>
+                    <h2 className="mt-4 text-2xl font-semibold">{currentUser.displayName}</h2>
+                    <p className="mt-2 text-sm leading-7 text-[var(--ink-body)]">
+                      {currentUser.emailMasked ?? currentUser.mobileMasked ?? "暂无联系方式"} ·{" "}
+                      {currentUser.roles.join(", ")}
+                    </p>
+                  </div>
+                  <button
+                    className="rounded-full border border-[var(--line-soft)] px-4 py-2 text-sm font-semibold text-[var(--ink-body)] transition hover:border-[var(--accent-main)]"
+                    disabled={isBusy}
+                    onClick={() => void loadCurrentUser()}
+                    type="button"
+                  >
+                    刷新资料
+                  </button>
+                </div>
 
-          <div className="grid gap-6 xl:grid-cols-2">
-            <Panel title="登录" subtitle="写入 Access Token 和 Refresh Token。">
-              <form className="grid gap-4" onSubmit={handleLogin}>
-                <Input
-                  label="账号"
-                  value={loginForm.account}
-                  onChange={(value) => setLoginForm((prev) => ({ ...prev, account: value }))}
-                />
-                <Input
-                  label="密码"
-                  type="password"
-                  value={loginForm.password}
-                  onChange={(value) => setLoginForm((prev) => ({ ...prev, password: value }))}
-                />
-                <SubmitButton label="执行登录" busy={isBusy} />
-              </form>
-            </Panel>
+                <div className="mt-5 grid gap-3 md:grid-cols-2">
+                  <MetricTile label="默认院区" value={currentUser.defaultHospitalCode ?? "MAIN"} />
+                  <MetricTile
+                    label="默认科室"
+                    value={currentUser.defaultDepartment?.name ?? "尚未设置"}
+                  />
+                </div>
 
-            <Panel title="当前用户" subtitle="读取和更新 `/api/v1/users/me`。">
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => void loadCurrentUser()}
-                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
-                >
-                  刷新资料
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleLogout()}
-                  className="rounded-full border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:border-rose-400"
-                >
-                  退出登录
-                </button>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <Link
+                    href="/appointments"
+                    className="rounded-full bg-[var(--ink-strong)] px-5 py-3 text-sm font-semibold text-white"
+                  >
+                    去预约中心
+                  </Link>
+                  <Link
+                    href="/chat"
+                    className="rounded-full border border-[var(--accent-main)] bg-[rgba(31,92,82,0.08)] px-5 py-3 text-sm font-semibold text-[var(--accent-main)]"
+                  >
+                    去导诊助手
+                  </Link>
+                  <button
+                    className="rounded-full border border-[rgba(190,92,67,0.22)] bg-[var(--danger-soft)] px-5 py-3 text-sm font-semibold text-[#8a4a3a]"
+                    disabled={isBusy}
+                    onClick={() => void handleLogout()}
+                    type="button"
+                  >
+                    退出登录
+                  </button>
+                </div>
               </div>
 
-              <form className="mt-5 grid gap-4" onSubmit={handleProfileUpdate}>
-                <Input
-                  label="显示名"
-                  value={profileForm.displayName}
-                  onChange={(value) => setProfileForm((prev) => ({ ...prev, displayName: value }))}
-                />
-                <Input
-                  label="默认院区"
-                  value={profileForm.defaultHospitalCode}
-                  onChange={(value) =>
-                    setProfileForm((prev) => ({ ...prev, defaultHospitalCode: value }))
-                  }
-                />
-                <Input
-                  label="默认科室 ID"
-                  value={profileForm.defaultDepartmentId}
-                  onChange={(value) =>
-                    setProfileForm((prev) => ({ ...prev, defaultDepartmentId: value }))
-                  }
-                />
-                <SubmitButton label="更新资料" busy={isBusy} />
+              <form className="medora-surface border border-[var(--line-soft)] px-5 py-6" onSubmit={handleProfileUpdate}>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ink-subtle)]">
+                  Preferences
+                </p>
+                <h2 className="mt-4 text-xl font-semibold">账户偏好</h2>
+                <div className="mt-5 space-y-4">
+                  <Field
+                    label="显示名称"
+                    value={profileForm.displayName}
+                    onChange={(value) => setProfileForm((prev) => ({ ...prev, displayName: value }))}
+                  />
+                  <Field
+                    label="默认院区编码"
+                    value={profileForm.defaultHospitalCode}
+                    onChange={(value) =>
+                      setProfileForm((prev) => ({ ...prev, defaultHospitalCode: value }))
+                    }
+                  />
+                  <Field
+                    label="默认科室 ID"
+                    value={profileForm.defaultDepartmentId}
+                    onChange={(value) =>
+                      setProfileForm((prev) => ({ ...prev, defaultDepartmentId: value }))
+                    }
+                  />
+                </div>
+                <button
+                  className="mt-5 rounded-full bg-[var(--accent-main)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                  disabled={isBusy}
+                  type="submit"
+                >
+                  保存偏好
+                </button>
               </form>
-            </Panel>
-          </div>
-        </div>
-      </section>
-    </main>
+            </div>
+          ) : (
+            <div className="grid gap-5 xl:grid-cols-2">
+              <form className="medora-surface border border-[var(--line-soft)] px-5 py-6" onSubmit={handleLogin}>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent-main)]">
+                  Sign In
+                </p>
+                <h2 className="mt-4 text-2xl font-semibold">返回你的就诊路径</h2>
+                <div className="mt-5 space-y-4">
+                  <Field
+                    label="手机号或邮箱"
+                    value={loginForm.account}
+                    onChange={(value) => setLoginForm((prev) => ({ ...prev, account: value }))}
+                  />
+                  <Field
+                    label="密码"
+                    type="password"
+                    value={loginForm.password}
+                    onChange={(value) => setLoginForm((prev) => ({ ...prev, password: value }))}
+                  />
+                </div>
+                <button
+                  className="mt-5 rounded-full bg-[var(--ink-strong)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                  disabled={isBusy}
+                  type="submit"
+                >
+                  登录并继续
+                </button>
+              </form>
+
+              <form className="medora-surface border border-[var(--line-soft)] px-5 py-6" onSubmit={handleRegister}>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent-warm)]">
+                  Create Account
+                </p>
+                <h2 className="mt-4 text-2xl font-semibold">创建一个新的 Medora 账户</h2>
+                <div className="mt-5 space-y-4">
+                  <Field
+                    label="显示名称"
+                    value={registerForm.displayName}
+                    onChange={(value) => setRegisterForm((prev) => ({ ...prev, displayName: value }))}
+                  />
+                  <Field
+                    label="手机号"
+                    value={registerForm.mobile}
+                    onChange={(value) => setRegisterForm((prev) => ({ ...prev, mobile: value }))}
+                  />
+                  <Field
+                    label="邮箱"
+                    value={registerForm.email}
+                    onChange={(value) => setRegisterForm((prev) => ({ ...prev, email: value }))}
+                  />
+                  <Field
+                    label="密码"
+                    type="password"
+                    value={registerForm.password}
+                    onChange={(value) => setRegisterForm((prev) => ({ ...prev, password: value }))}
+                  />
+                </div>
+                <button
+                  className="mt-5 rounded-full bg-[var(--accent-main)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                  disabled={isBusy}
+                  type="submit"
+                >
+                  创建账户
+                </button>
+              </form>
+            </div>
+          )}
+        </section>
+      </div>
+    </PatientShell>
   );
 }
 
-function Panel({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-[2rem] border border-white/70 bg-white/80 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur">
-      <h2 className="text-2xl font-semibold text-slate-900">{title}</h2>
-      <p className="mt-2 text-sm leading-7 text-slate-500">{subtitle}</p>
-      <div className="mt-5">{children}</div>
-    </section>
-  );
-}
-
-function Input({
+function Field({
   label,
   value,
   onChange,
@@ -345,37 +431,32 @@ function Input({
   type?: string;
 }) {
   return (
-    <label className="grid gap-2 text-sm font-medium text-slate-700">
-      <span>{label}</span>
+    <label className="block">
+      <span className="text-sm font-semibold text-[var(--ink-body)]">{label}</span>
       <input
+        className="mt-2 w-full rounded-[1.1rem] border border-[var(--line-soft)] bg-white/80 px-4 py-3 text-sm text-[var(--ink-strong)] outline-none transition focus:border-[var(--accent-main)]"
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:bg-white"
       />
     </label>
   );
 }
 
-function SubmitButton({ label, busy }: { label: string; busy: boolean }) {
+function StatusCard({ label, value }: { label: string; value: string }) {
   return (
-    <button
-      type="submit"
-      disabled={busy}
-      className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-    >
-      {busy ? "处理中..." : label}
-    </button>
+    <div className="rounded-[1.2rem] border border-[rgba(20,42,39,0.08)] bg-white/72 px-4 py-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ink-subtle)]">{label}</p>
+      <p className="mt-3 text-base font-semibold text-[var(--ink-strong)]">{value}</p>
+    </div>
   );
 }
 
-function StatusCard({ label, value }: { label: string; value: string }) {
+function MetricTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[1.4rem] border border-slate-200 bg-slate-50 px-4 py-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-        {label}
-      </p>
-      <p className="mt-2 text-lg font-semibold text-slate-900">{value}</p>
+    <div className="rounded-[1.2rem] border border-[rgba(20,42,39,0.08)] bg-[rgba(237,243,238,0.56)] px-4 py-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ink-subtle)]">{label}</p>
+      <p className="mt-3 text-base font-semibold text-[var(--ink-strong)]">{value}</p>
     </div>
   );
 }

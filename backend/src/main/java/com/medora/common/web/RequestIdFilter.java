@@ -9,6 +9,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.slf4j.MDC;
 
 import java.io.IOException;
 import java.util.UUID;
@@ -31,6 +32,17 @@ public class RequestIdFilter extends OncePerRequestFilter {
 
         request.setAttribute(REQUEST_ID_ATTRIBUTE, requestId);
         response.setHeader(REQUEST_ID_HEADER, requestId);
-        filterChain.doFilter(request, response);
+        MDC.put("requestId", requestId);
+        MDC.put("httpMethod", request.getMethod());
+        MDC.put("requestPath", request.getRequestURI());
+        try {
+            filterChain.doFilter(request, response);
+        } finally {
+            MDC.remove("userId");
+            MDC.remove("userRoles");
+            MDC.remove("requestPath");
+            MDC.remove("httpMethod");
+            MDC.remove("requestId");
+        }
     }
 }

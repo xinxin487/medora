@@ -24,7 +24,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
       show-details: always
@@ -33,9 +33,11 @@ logging:
   level:
     root: INFO
     com.medora: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} requestId=%X{requestId:-na} method=%X{httpMethod:-na} path=%X{requestPath:-na} user=%X{userId:-anonymous} - %msg%n"
 
 medora:
-  phase: phase-6
+  phase: phase-8
   ai:
     provider: ${AI_PROVIDER:local-hash}
     chat-provider: ${AI_CHAT_PROVIDER:local}

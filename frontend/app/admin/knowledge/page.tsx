@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { AdminShell } from "@/components/admin-shell";
 import { ApiClientError, apiFetch } from "@/lib/api/client";
 import type { PageResponse } from "@/lib/types";
 
@@ -119,21 +120,16 @@ export default function KnowledgeAdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f8faf7] px-4 py-6 text-slate-950 sm:px-6">
-      <section className="mx-auto max-w-7xl">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
-          <div>
-            <Link href="/" className="text-sm font-semibold text-emerald-700">
-              Medora
-            </Link>
-            <h1 className="mt-2 text-2xl font-semibold">知识库管理</h1>
-          </div>
-          <Link className="text-sm font-semibold text-slate-700" href="/chat">
-            打开对话联调
-          </Link>
-        </header>
-
-        <div className="mt-5 grid gap-5 lg:grid-cols-[360px_1fr]">
+    <AdminShell
+      title="知识库管理"
+      description="这里继续承担知识文档上传、发布和检索测试，同时也成为后台导航的一部分，方便和会话、Trace、审计联动排查。"
+      actions={
+        <Link className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white" href="/chat">
+          打开对话联调
+        </Link>
+      }
+    >
+      <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
           <aside className="space-y-4">
             <form className="space-y-3 border border-slate-200 bg-white p-4" onSubmit={uploadDocument}>
               <h2 className="text-base font-semibold">上传文档</h2>
@@ -266,7 +262,6 @@ export default function KnowledgeAdminPage() {
             </div>
           </section>
         </div>
-      </section>
-    </main>
+    </AdminShell>
   );
 }

@@ -76,4 +76,44 @@ public class AgentTraceEntity extends BaseEntity {
         entity.errorMessage = errorMessage;
         return entity;
     }
+
+    public String getTraceId() {
+        return traceId;
+    }
+
+    public ConversationEntity getConversation() {
+        return conversation;
+    }
+
+    public ChatMessageEntity getMessage() {
+        return message;
+    }
+
+    public String getIntentType() {
+        return intentType;
+    }
+
+    public String getRouteMode() {
+        return routeMode;
+    }
+
+    public String getRetrievalJson() {
+        return retrievalJson;
+    }
+
+    public String getToolEventsJson() {
+        return toolEventsJson;
+    }
+
+    public Long getLatencyMs() {
+        return latencyMs;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
 }

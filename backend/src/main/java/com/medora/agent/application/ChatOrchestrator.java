@@ -1,5 +1,7 @@
 package com.medora.agent.application;
 
+import com.medora.memory.service.ConversationSummaryService;
+import com.medora.memory.service.MemoryService;
 import com.medora.agent.tool.ToolExecutionContext;
 import com.medora.agent.tool.ToolExecutionResult;
 import com.medora.agent.tool.ToolExecutor;
@@ -28,6 +30,8 @@ public class ChatOrchestrator {
     private final AgentModelGateway agentModelGateway;
     private final StreamEventPublisher streamEventPublisher;
     private final KnowledgeJsonService knowledgeJsonService;
+    private final ConversationSummaryService conversationSummaryService;
+    private final MemoryService memoryService;
 
     public ChatOrchestrator(IntentRouter intentRouter,
                             SafetyGuard safetyGuard,
@@ -36,7 +40,9 @@ public class ChatOrchestrator {
                             PromptBuilder promptBuilder,
                             AgentModelGateway agentModelGateway,
                             StreamEventPublisher streamEventPublisher,
-                            KnowledgeJsonService knowledgeJsonService) {
+                            KnowledgeJsonService knowledgeJsonService,
+                            ConversationSummaryService conversationSummaryService,
+                            MemoryService memoryService) {
         this.intentRouter = intentRouter;
         this.safetyGuard = safetyGuard;
         this.retrievalService = retrievalService;
@@ -45,6 +51,8 @@ public class ChatOrchestrator {
         this.agentModelGateway = agentModelGateway;
         this.streamEventPublisher = streamEventPublisher;
         this.knowledgeJsonService = knowledgeJsonService;
+        this.conversationSummaryService = conversationSummaryService;
+        this.memoryService = memoryService;
     }
 
     public AgentRunResult handle(AgentChatCommand command, SseEmitter emitter) throws IOException {
@@ -53,6 +61,10 @@ public class ChatOrchestrator {
         IntentDecision intent = shouldPreferLocalIntent(localIntent)
                 ? localIntent
                 : agentModelGateway.planIntent(command.message()).orElse(localIntent);
+        ConversationSummaryService.ConversationContextSnapshot conversationContext =
+                conversationSummaryService.loadContext(command.conversationId());
+        List<MemoryService.MemorySnippet> relevantMemories =
+                memoryService.loadRelevantMemory(command.userAccountId(), intent.intentType());
         List<RetrievalResult> retrievalResults = List.of();
         if (intent.needRetrieval() || hasSearchKnowledgeTool(intent)) {
             streamEventPublisher.publishToolStatus(emitter, "searchKnowledge", "STARTED", "正在检索知识库");
@@ -90,16 +102,21 @@ public class ChatOrchestrator {
             }
         }
 
-        Optional<String> streamedReply = agentModelGateway.generateReplyStreaming(
+        PromptBuilder.PromptPackage promptPackage = promptBuilder.buildPromptPackage(
                 command.message(),
                 intent,
+                conversationContext,
+                relevantMemories,
                 retrievalResults,
-                toolResults,
+                toolResults
+        );
+        Optional<String> streamedReply = agentModelGateway.generateReplyStreaming(
+                promptPackage.modelUserPrompt(),
                 delta -> publishDelta(emitter, delta)
         );
         String reply = streamedReply.orElse("");
         if (reply.isBlank()) {
-            reply = promptBuilder.build(command.message(), intent, retrievalResults, toolResults);
+            reply = promptPackage.fallbackReply();
             for (String delta : splitDeltas(reply)) {
                 streamEventPublisher.publishDelta(emitter, delta);
             }
@@ -110,7 +127,8 @@ public class ChatOrchestrator {
                 retrievalResults,
                 toolResults,
                 toCitationJson(retrievalResults),
-                toToolJson(intent, toolResults)
+                toToolJson(intent, toolResults),
+                promptPackage.tokenUsageJson()
         );
     }
 

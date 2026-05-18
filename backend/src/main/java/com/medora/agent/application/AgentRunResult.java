@@ -11,6 +11,7 @@ public record AgentRunResult(
         List<RetrievalResult> retrievalResults,
         List<ToolExecutionResult> toolResults,
         String citationJson,
-        String toolCallJson
+        String toolCallJson,
+        String tokenUsageJson
 ) {
 }
