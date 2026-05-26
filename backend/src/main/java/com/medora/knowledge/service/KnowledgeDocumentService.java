@@ -13,10 +13,13 @@ import com.medora.knowledge.api.response.KnowledgeDocumentItem;
 import com.medora.knowledge.api.response.KnowledgeDocumentResponse;
 import com.medora.knowledge.api.response.KnowledgeUploadResponse;
 import com.medora.knowledge.domain.KnowledgeDocumentEntity;
+import com.medora.knowledge.infra.KnowledgeFileStore;
 import com.medora.knowledge.parser.DocumentParser;
 import com.medora.knowledge.repository.KnowledgeChunkRepository;
 import com.medora.knowledge.repository.KnowledgeDocumentRepository;
 import jakarta.persistence.criteria.Predicate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -40,6 +43,8 @@ import java.util.UUID;
 @Service
 public class KnowledgeDocumentService {
 
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeDocumentService.class);
+
     private final KnowledgeDocumentRepository knowledgeDocumentRepository;
     private final KnowledgeChunkRepository knowledgeChunkRepository;
     private final UserAccountRepository userAccountRepository;
@@ -48,6 +53,7 @@ public class KnowledgeDocumentService {
     private final DocumentIngestService documentIngestService;
     private final KnowledgeJsonService knowledgeJsonService;
     private final AuditLogService auditLogService;
+    private final KnowledgeFileStore knowledgeFileStore;
 
     public KnowledgeDocumentService(KnowledgeDocumentRepository knowledgeDocumentRepository,
                                     KnowledgeChunkRepository knowledgeChunkRepository,
@@ -56,7 +62,8 @@ public class KnowledgeDocumentService {
                                     DocumentParser documentParser,
                                     DocumentIngestService documentIngestService,
                                     KnowledgeJsonService knowledgeJsonService,
-                                    AuditLogService auditLogService) {
+                                    AuditLogService auditLogService,
+                                    KnowledgeFileStore knowledgeFileStore) {
         this.knowledgeDocumentRepository = knowledgeDocumentRepository;
         this.knowledgeChunkRepository = knowledgeChunkRepository;
         this.userAccountRepository = userAccountRepository;
@@ -65,6 +72,7 @@ public class KnowledgeDocumentService {
         this.documentIngestService = documentIngestService;
         this.knowledgeJsonService = knowledgeJsonService;
         this.auditLogService = auditLogService;
+        this.knowledgeFileStore = knowledgeFileStore;
     }
 
     @Transactional
@@ -82,6 +90,7 @@ public class KnowledgeDocumentService {
                 normalizedTitle,
                 parsed.sourceType(),
                 file.getOriginalFilename(),
+                null,
                 normalizedBizScope,
                 parseTags(departmentTags),
                 parseTags(doctorTags),
@@ -93,28 +102,46 @@ public class KnowledgeDocumentService {
                 uploader
         ));
 
-        int chunkCount = documentIngestService.ingest(document, parsed.content());
-        auditLogService.record(
-                uploader,
-                "ADMIN",
-                "KB_DOCUMENT_UPLOAD",
-                "KNOWLEDGE_DOCUMENT",
-                document.getPublicId().toString(),
-                Map.of(
-                        "title", document.getTitle(),
-                        "bizScope", document.getBizScope(),
-                        "chunkCount", chunkCount,
-                        "publishStatus", document.getPublishStatus()
-                )
-        );
-        return new KnowledgeUploadResponse(
+        String objectPath = objectPath(document);
+        try {
+            knowledgeFileStore.store(objectPath, file.getBytes(), file.getContentType());
+            document.setFilePath(objectPath);
+        } catch (Exception ex) {
+            log.warn("Failed to store file in MinIO, ingestion continues without persistence: {}", ex.getMessage());
+        }
+
+        document.markProcessing();
+        KnowledgeUploadResponse response = new KnowledgeUploadResponse(
                 document.getPublicId().toString(),
                 document.getTitle(),
                 document.getBizScope(),
                 document.getPublishStatus(),
                 document.getIngestStatus(),
-                chunkCount
+                0
         );
+
+        documentIngestService.ingestAsync(document, parsed.content())
+                .thenAccept(chunkCount -> {
+                    auditLogService.record(
+                            uploader,
+                            "ADMIN",
+                            "KB_DOCUMENT_UPLOAD",
+                            "KNOWLEDGE_DOCUMENT",
+                            document.getPublicId().toString(),
+                            Map.of(
+                                    "title", document.getTitle(),
+                                    "bizScope", document.getBizScope(),
+                                    "chunkCount", chunkCount,
+                                    "publishStatus", document.getPublishStatus()
+                            )
+                    );
+                })
+                .exceptionally(ex -> {
+                    log.error("Async ingest failed for document {}: {}", document.getPublicId(), ex.getMessage());
+                    return null;
+                });
+
+        return response;
     }
 
     @Transactional(readOnly = true)
@@ -262,5 +289,12 @@ public class KnowledgeDocumentService {
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 not supported", ex);
         }
+    }
+
+    private String objectPath(KnowledgeDocumentEntity document) {
+        return document.getBizScope().toLowerCase()
+                + "/" + document.getPublicId()
+                + "_" + document.getVersionNo()
+                + "_" + (document.getSourceUri() != null ? document.getSourceUri() : "unknown");
     }
 }

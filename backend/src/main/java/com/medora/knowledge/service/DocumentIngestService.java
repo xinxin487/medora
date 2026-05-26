@@ -9,33 +9,59 @@ import com.medora.knowledge.domain.KnowledgeDocumentEntity;
 import com.medora.knowledge.domain.KnowledgeIngestTaskEntity;
 import com.medora.knowledge.repository.KnowledgeChunkRepository;
 import com.medora.knowledge.repository.KnowledgeIngestTaskRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class DocumentIngestService {
+
+    private static final Logger log = LoggerFactory.getLogger(DocumentIngestService.class);
 
     private final DocumentChunker documentChunker;
     private final KnowledgeChunkRepository knowledgeChunkRepository;
     private final KnowledgeIngestTaskRepository knowledgeIngestTaskRepository;
     private final KnowledgeJsonService knowledgeJsonService;
     private final EmbeddingService embeddingService;
+    private final TransactionTemplate transactionTemplate;
 
     public DocumentIngestService(DocumentChunker documentChunker,
                                  KnowledgeChunkRepository knowledgeChunkRepository,
                                  KnowledgeIngestTaskRepository knowledgeIngestTaskRepository,
                                  KnowledgeJsonService knowledgeJsonService,
-                                 EmbeddingService embeddingService) {
+                                 EmbeddingService embeddingService,
+                                 TransactionTemplate transactionTemplate) {
         this.documentChunker = documentChunker;
         this.knowledgeChunkRepository = knowledgeChunkRepository;
         this.knowledgeIngestTaskRepository = knowledgeIngestTaskRepository;
         this.knowledgeJsonService = knowledgeJsonService;
         this.embeddingService = embeddingService;
+        this.transactionTemplate = transactionTemplate;
     }
 
-    public int ingest(KnowledgeDocumentEntity document, String parsedContent) {
+    @Async
+    public CompletableFuture<Integer> ingestAsync(KnowledgeDocumentEntity document, String parsedContent) {
+        try {
+            int count = transactionTemplate.execute(status -> ingestInternal(document, parsedContent));
+            log.info("Async ingest complete for document {}: {} chunks", document.getPublicId(), count);
+            return CompletableFuture.completedFuture(count);
+        } catch (Exception ex) {
+            log.error("Async ingest failed for document {}: {}", document.getPublicId(), ex.getMessage());
+            transactionTemplate.executeWithoutResult(status -> {
+                document.markIngestFailed(ex.getMessage());
+                knowledgeChunkRepository.deleteByDocument(document);
+            });
+            return CompletableFuture.failedFuture(ex);
+        }
+    }
+
+    private int ingestInternal(KnowledgeDocumentEntity document, String parsedContent) {
         KnowledgeIngestTaskEntity task = knowledgeIngestTaskRepository.save(
                 KnowledgeIngestTaskEntity.running(document, "REINDEX")
         );

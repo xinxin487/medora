@@ -29,6 +29,9 @@ public class KnowledgeDocumentEntity extends BaseEntity {
     @Column(name = "source_uri")
     private String sourceUri;
 
+    @Column(name = "file_path")
+    private String filePath;
+
     @Column(name = "biz_scope", nullable = false)
     private String bizScope;
 
@@ -67,6 +70,7 @@ public class KnowledgeDocumentEntity extends BaseEntity {
     public static KnowledgeDocumentEntity uploaded(String title,
                                                    String sourceType,
                                                    String sourceUri,
+                                                   String filePath,
                                                    String bizScope,
                                                    List<String> departmentTags,
                                                    List<String> doctorTags,
@@ -77,6 +81,7 @@ public class KnowledgeDocumentEntity extends BaseEntity {
         entity.title = title;
         entity.sourceType = sourceType;
         entity.sourceUri = sourceUri;
+        entity.filePath = filePath;
         entity.bizScope = bizScope;
         entity.departmentTags = departmentTags.toArray(String[]::new);
         entity.doctorTags = doctorTags.toArray(String[]::new);
@@ -87,6 +92,10 @@ public class KnowledgeDocumentEntity extends BaseEntity {
         entity.uploadedBy = uploadedBy;
         entity.uploadedAt = OffsetDateTime.now();
         return entity;
+    }
+
+    public void markProcessing() {
+        this.ingestStatus = "PROCESSING";
     }
 
     public void markIndexed() {
@@ -116,6 +125,14 @@ public class KnowledgeDocumentEntity extends BaseEntity {
 
     public String getSourceUri() {
         return sourceUri;
+    }
+
+    public String getFilePath() {
+        return filePath;
+    }
+
+    public void setFilePath(String filePath) {
+        this.filePath = filePath;
     }
 
     public String getBizScope() {

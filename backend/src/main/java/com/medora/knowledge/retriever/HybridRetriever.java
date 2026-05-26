@@ -13,10 +13,13 @@ public class HybridRetriever {
 
     private final KeywordRetriever keywordRetriever;
     private final VectorRetriever vectorRetriever;
+    private final RerankService rerankService;
 
-    public HybridRetriever(KeywordRetriever keywordRetriever, VectorRetriever vectorRetriever) {
+    public HybridRetriever(KeywordRetriever keywordRetriever, VectorRetriever vectorRetriever,
+                           RerankService rerankService) {
         this.keywordRetriever = keywordRetriever;
         this.vectorRetriever = vectorRetriever;
+        this.rerankService = rerankService;
     }
 
     private static final double MIN_SCORE_THRESHOLD = 0.15;
@@ -25,12 +28,12 @@ public class HybridRetriever {
         Map<Long, ScoredRow> merged = new LinkedHashMap<>();
         merge(merged, keywordRetriever.search(query, bizScope, Math.max(topK, 8)), 0.55);
         merge(merged, vectorRetriever.search(query, bizScope, Math.max(topK, 8)), 0.45);
-        return merged.values().stream()
+        return rerankService.rerank(query, merged.values().stream()
                 .map(ScoredRow::toSearchRow)
                 .filter(row -> row.getScore() >= MIN_SCORE_THRESHOLD)
                 .sorted((left, right) -> Double.compare(right.getScore(), left.getScore()))
                 .limit(topK)
-                .toList();
+                .toList());
     }
 
     private void merge(Map<Long, ScoredRow> merged, List<KnowledgeChunkSearchRow> rows, double weight) {
