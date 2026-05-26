@@ -13,6 +13,7 @@ import com.medora.knowledge.api.response.KnowledgeUploadResponse;
 import com.medora.knowledge.service.KnowledgeDocumentService;
 import com.medora.knowledge.service.RetrievalService;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -79,6 +80,12 @@ public class AdminKnowledgeController {
     public ApiResponse<KnowledgeDocumentResponse> publish(@PathVariable String documentId,
                                                           @Valid @RequestBody KnowledgePublishRequest request) {
         return ApiResponse.success(knowledgeDocumentService.publish(documentId, request));
+    }
+
+    @DeleteMapping("/documents/{documentId}")
+    public ApiResponse<Void> delete(@PathVariable String documentId) {
+        knowledgeDocumentService.delete(documentId);
+        return ApiResponse.success(null);
     }
 
     @PostMapping("/search/test")

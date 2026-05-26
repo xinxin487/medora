@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase RAG-1（已完成，待用户确认是否继续 RAG-2）
+Phase RAG-2（已完成，待确认是否继续 RAG-3）
 
 ## Phases
 
@@ -18,19 +18,19 @@ Phase RAG-1（已完成，待用户确认是否继续 RAG-2）
 - **Status:** complete
 
 ### Phase RAG-2: 检索与记忆增强（P1）
-- [ ] G12: 记忆写入多触发
-- [ ] G13: 置信度评分机制
-- [ ] G14: 记忆过期机制
-- [ ] G5: TokenBudgetPlanner
-- **Status:** pending
+- [x] G12: 记忆写入多触发
+- [x] G13: 置信度评分机制
+- [x] G14: 记忆过期机制
+- [x] G5: TokenBudgetPlanner（已存在）
+- **Status:** complete
 
 ### Phase RAG-3: 工程优化与测试（P2）
-- [ ] G6: FAQ 单元切分
-- [ ] G7: 切分参数可配置
-- [ ] G9: RetrievalResultAssembler
-- [ ] G11: 中文分词增强
-- [ ] G15: 测试覆盖增强
-- **Status:** pending
+- [x] G6: FAQ 单元切分
+- [x] G7: 切分参数可配置
+- [x] G9: RetrievalResultAssembler
+- [x] G11: 中文分词增强
+- [x] G15: 测试覆盖增强（33 tests, 0 failures）
+- **Status:** complete
 
 ## Key Questions
 

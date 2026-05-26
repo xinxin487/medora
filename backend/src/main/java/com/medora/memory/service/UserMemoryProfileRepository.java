@@ -4,6 +4,7 @@ import com.medora.auth.domain.UserAccountEntity;
 import com.medora.memory.domain.UserMemoryProfileEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -24,6 +25,11 @@ public interface UserMemoryProfileRepository extends JpaRepository<UserMemoryPro
 
     List<UserMemoryProfileEntity> findTop10ByUserAccountAndStatusOrderByLastConfirmedAtDescCreatedAtDesc(
             UserAccountEntity userAccount,
+            String status
+    );
+
+    List<UserMemoryProfileEntity> findByExpiresAtBeforeAndStatus(
+            OffsetDateTime expiresAt,
             String status
     );
 }

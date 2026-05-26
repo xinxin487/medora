@@ -8,6 +8,7 @@ import com.medora.knowledge.domain.KnowledgeChunkEntity;
 import com.medora.knowledge.domain.KnowledgeDocumentEntity;
 import com.medora.knowledge.domain.KnowledgeIngestTaskEntity;
 import com.medora.knowledge.repository.KnowledgeChunkRepository;
+import com.medora.knowledge.repository.KnowledgeDocumentRepository;
 import com.medora.knowledge.repository.KnowledgeIngestTaskRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +28,7 @@ public class DocumentIngestService {
     private final DocumentChunker documentChunker;
     private final KnowledgeChunkRepository knowledgeChunkRepository;
     private final KnowledgeIngestTaskRepository knowledgeIngestTaskRepository;
+    private final KnowledgeDocumentRepository knowledgeDocumentRepository;
     private final KnowledgeJsonService knowledgeJsonService;
     private final EmbeddingService embeddingService;
     private final TransactionTemplate transactionTemplate;
@@ -34,12 +36,14 @@ public class DocumentIngestService {
     public DocumentIngestService(DocumentChunker documentChunker,
                                  KnowledgeChunkRepository knowledgeChunkRepository,
                                  KnowledgeIngestTaskRepository knowledgeIngestTaskRepository,
+                                 KnowledgeDocumentRepository knowledgeDocumentRepository,
                                  KnowledgeJsonService knowledgeJsonService,
                                  EmbeddingService embeddingService,
                                  TransactionTemplate transactionTemplate) {
         this.documentChunker = documentChunker;
         this.knowledgeChunkRepository = knowledgeChunkRepository;
         this.knowledgeIngestTaskRepository = knowledgeIngestTaskRepository;
+        this.knowledgeDocumentRepository = knowledgeDocumentRepository;
         this.knowledgeJsonService = knowledgeJsonService;
         this.embeddingService = embeddingService;
         this.transactionTemplate = transactionTemplate;
@@ -54,7 +58,9 @@ public class DocumentIngestService {
         } catch (Exception ex) {
             log.error("Async ingest failed for document {}: {}", document.getPublicId(), ex.getMessage());
             transactionTemplate.executeWithoutResult(status -> {
-                document.markIngestFailed(ex.getMessage());
+                KnowledgeDocumentEntity reloaded = knowledgeDocumentRepository.findById(document.getId()).orElseThrow();
+                reloaded.markIngestFailed(ex.getMessage());
+                knowledgeDocumentRepository.save(reloaded);
                 knowledgeChunkRepository.deleteByDocument(document);
             });
             return CompletableFuture.failedFuture(ex);
@@ -84,11 +90,15 @@ public class DocumentIngestService {
                 knowledgeChunkRepository.updateEmbedding(savedChunk.getId(), toVectorLiteral(embedding.values()),
                         embedding.model());
             }
+            document = knowledgeDocumentRepository.findById(document.getId()).orElseThrow();
             document.markIndexed();
+            knowledgeDocumentRepository.save(document);
             task.markSuccess();
             return chunks.size();
         } catch (RuntimeException ex) {
+            document = knowledgeDocumentRepository.findById(document.getId()).orElseThrow();
             document.markIngestFailed(ex.getMessage());
+            knowledgeDocumentRepository.save(document);
             task.markFailed(ex.getMessage());
             throw ex;
         }

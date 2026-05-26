@@ -16,7 +16,25 @@ public class AiProperties {
     private String chatModel = "gpt-4.1-mini";
     private String embeddingModel = "local-hash-1024";
     private int embeddingDimensions = 1024;
+    private int chunkTargetSize = 700;
+    private int chunkOverlapSize = 120;
     private boolean insecureTls = false;
+
+    public int getChunkTargetSize() {
+        return chunkTargetSize;
+    }
+
+    public void setChunkTargetSize(int chunkTargetSize) {
+        this.chunkTargetSize = chunkTargetSize;
+    }
+
+    public int getChunkOverlapSize() {
+        return chunkOverlapSize;
+    }
+
+    public void setChunkOverlapSize(int chunkOverlapSize) {
+        this.chunkOverlapSize = chunkOverlapSize;
+    }
 
     public String getProvider() {
         return provider;

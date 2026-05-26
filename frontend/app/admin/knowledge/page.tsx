@@ -91,6 +91,17 @@ export default function KnowledgeAdminPage() {
     });
   }
 
+  async function deleteDocument(documentId: string, title: string) {
+    if (!window.confirm(`确认删除「${title}」？此操作不可撤销。`)) return;
+    await runAction(async () => {
+      await apiFetch(`/admin/knowledge/documents/${documentId}`, {
+        method: "DELETE",
+      });
+      setMessage(`文档「${title}」已删除。`);
+      await loadDocuments();
+    });
+  }
+
   async function searchKnowledge(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await runAction(async () => {
@@ -138,7 +149,7 @@ export default function KnowledgeAdminPage() {
                 </select>
               </label>
               <input
-                accept=".txt,.md,text/plain,text/markdown"
+                accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf"
                 className="w-full text-sm"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 type="file"
@@ -224,6 +235,14 @@ export default function KnowledgeAdminPage() {
                       type="button"
                     >
                       下线
+                    </button>
+                    <button
+                      className="rounded-full border border-[var(--danger-border,#e8c8c0)] bg-[rgba(190,92,67,0.08)] px-3 py-1.5 text-xs font-semibold text-[#8a4a3a] disabled:opacity-60"
+                      disabled={isBusy}
+                      onClick={() => void deleteDocument(doc.documentId, doc.title)}
+                      type="button"
+                    >
+                      删除
                     </button>
                   </div>
                 </div>

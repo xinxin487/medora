@@ -29,7 +29,23 @@
   - backend/pom.xml, *.java (14 files), V14 migration, application.yml
 - **Test results:** 31/31 tests passed, BUILD SUCCESS
 
-### Phase RAG-2: 检索与记忆增强（待开始）
+### Phase RAG-2: 检索与记忆增强（已完成）
+- **Status:** complete
+- **Started:** 2026-05-26
+- **Completed:** 2026-05-26
+- Actions taken:
+  - G12: `captureFromUserMessage()` — 时段偏好从 4 模式扩展到 20+ 模式；新增科室/医生提及检测（正则）；新增 `captureScheduleQuerySignal()` 处理号源查询结果
+  - G13: `computeConfidence()` 评分规则引擎（BOOK_APPOINTMENT=1.0, USER_EXPLICIT=0.8, USER_MENTION=0.3, TOOL_QUERY=0.3）；`upsertMemory()` 置信度合并取 max；同源多轮重复 +0.1 递增至上限 0.9
+  - G14: 默认 180 天 TTL；`loadRelevantMemory()` 过期过滤；`@Scheduled` 每日 3 点清理；`expire()` 方法；`findByExpiresAtBeforeAndStatus` 仓库方法
+  - G5: TokenBudgetPlanner 确认已存在并与 PromptBuilder/ContextPruner 完整集成
+- Files created/modified:
+  - backend/src/main/java/com/medora/memory/service/MemoryService.java (modified)
+  - backend/src/main/java/com/medora/memory/domain/UserMemoryProfileEntity.java (modified)
+  - backend/src/main/java/com/medora/memory/service/UserMemoryProfileRepository.java (modified)
+  - backend/src/main/java/com/medora/knowledge/infra/AsyncConfig.java (modified)
+- **Test results:** 31/31 tests passed, BUILD SUCCESS
+
+### Phase RAG-3: 工程优化与测试（待开始）
 - **Status:** pending
 
 ### Phase RAG-3: 工程优化与测试（待开始）

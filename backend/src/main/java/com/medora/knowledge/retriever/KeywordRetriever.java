@@ -20,7 +20,21 @@ public class KeywordRetriever {
         if (!StringUtils.hasText(query)) {
             return List.of();
         }
-        return knowledgeChunkRepository.searchPublished(query.trim(), normalizeToNull(bizScope), Math.max(1, topK));
+        String trimmed = query.trim();
+        String ftsQuery = segmentChinese(trimmed);
+        return knowledgeChunkRepository.searchPublished(trimmed, ftsQuery, normalizeToNull(bizScope), Math.max(1, topK));
+    }
+
+    static String segmentChinese(String query) {
+        StringBuilder sb = new StringBuilder();
+        for (char c : query.toCharArray()) {
+            if (Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN) {
+                sb.append(c).append(' ');
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString().trim();
     }
 
     private String normalizeToNull(String value) {

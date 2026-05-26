@@ -17,6 +17,7 @@ import com.medora.knowledge.infra.KnowledgeFileStore;
 import com.medora.knowledge.parser.DocumentParser;
 import com.medora.knowledge.repository.KnowledgeChunkRepository;
 import com.medora.knowledge.repository.KnowledgeDocumentRepository;
+import com.medora.knowledge.repository.KnowledgeIngestTaskRepository;
 import jakarta.persistence.criteria.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +28,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -47,6 +50,7 @@ public class KnowledgeDocumentService {
 
     private final KnowledgeDocumentRepository knowledgeDocumentRepository;
     private final KnowledgeChunkRepository knowledgeChunkRepository;
+    private final KnowledgeIngestTaskRepository knowledgeIngestTaskRepository;
     private final UserAccountRepository userAccountRepository;
     private final CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider;
     private final DocumentParser documentParser;
@@ -57,6 +61,7 @@ public class KnowledgeDocumentService {
 
     public KnowledgeDocumentService(KnowledgeDocumentRepository knowledgeDocumentRepository,
                                     KnowledgeChunkRepository knowledgeChunkRepository,
+                                    KnowledgeIngestTaskRepository knowledgeIngestTaskRepository,
                                     UserAccountRepository userAccountRepository,
                                     CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider,
                                     DocumentParser documentParser,
@@ -66,6 +71,7 @@ public class KnowledgeDocumentService {
                                     KnowledgeFileStore knowledgeFileStore) {
         this.knowledgeDocumentRepository = knowledgeDocumentRepository;
         this.knowledgeChunkRepository = knowledgeChunkRepository;
+        this.knowledgeIngestTaskRepository = knowledgeIngestTaskRepository;
         this.userAccountRepository = userAccountRepository;
         this.currentAuthenticatedUserProvider = currentAuthenticatedUserProvider;
         this.documentParser = documentParser;
@@ -120,26 +126,31 @@ public class KnowledgeDocumentService {
                 0
         );
 
-        documentIngestService.ingestAsync(document, parsed.content())
-                .thenAccept(chunkCount -> {
-                    auditLogService.record(
-                            uploader,
-                            "ADMIN",
-                            "KB_DOCUMENT_UPLOAD",
-                            "KNOWLEDGE_DOCUMENT",
-                            document.getPublicId().toString(),
-                            Map.of(
-                                    "title", document.getTitle(),
-                                    "bizScope", document.getBizScope(),
-                                    "chunkCount", chunkCount,
-                                    "publishStatus", document.getPublishStatus()
-                            )
-                    );
-                })
-                .exceptionally(ex -> {
-                    log.error("Async ingest failed for document {}: {}", document.getPublicId(), ex.getMessage());
-                    return null;
-                });
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                documentIngestService.ingestAsync(document, parsed.content())
+                        .thenAccept(chunkCount -> {
+                            auditLogService.record(
+                                    uploader,
+                                    "ADMIN",
+                                    "KB_DOCUMENT_UPLOAD",
+                                    "KNOWLEDGE_DOCUMENT",
+                                    document.getPublicId().toString(),
+                                    Map.of(
+                                            "title", document.getTitle(),
+                                            "bizScope", document.getBizScope(),
+                                            "chunkCount", chunkCount,
+                                            "publishStatus", document.getPublishStatus()
+                                    )
+                            );
+                        })
+                        .exceptionally(ex -> {
+                            log.error("Async ingest failed for document {}: {}", document.getPublicId(), ex.getMessage());
+                            return null;
+                        });
+            }
+        });
 
         return response;
     }
@@ -211,6 +222,28 @@ public class KnowledgeDocumentService {
                 )
         );
         return KnowledgeDocumentMapper.toResponse(document, knowledgeChunkRepository);
+    }
+
+    @Transactional
+    public void delete(String documentId) {
+        KnowledgeDocumentEntity document = findByPublicId(documentId);
+        knowledgeIngestTaskRepository.deleteByDocument(document);
+        knowledgeChunkRepository.deleteByDocument(document);
+        if (document.getFilePath() != null) {
+            knowledgeFileStore.delete(document.getFilePath());
+        }
+        knowledgeDocumentRepository.delete(document);
+        auditLogService.record(
+                getCurrentUserAccount(),
+                "ADMIN",
+                "KB_DOCUMENT_DELETE",
+                "KNOWLEDGE_DOCUMENT",
+                document.getPublicId().toString(),
+                Map.of(
+                        "title", document.getTitle(),
+                        "bizScope", document.getBizScope()
+                )
+        );
     }
 
     private Specification<KnowledgeDocumentEntity> toSpec(KnowledgeDocumentListQuery query) {

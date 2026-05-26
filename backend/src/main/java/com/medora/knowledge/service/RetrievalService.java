@@ -4,6 +4,7 @@ import com.medora.knowledge.api.response.KnowledgeSearchItem;
 import com.medora.knowledge.api.response.KnowledgeSearchResponse;
 import com.medora.knowledge.repository.KnowledgeChunkSearchRow;
 import com.medora.knowledge.retriever.HybridRetriever;
+import com.medora.knowledge.retriever.RetrievalResultAssembler;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -15,9 +16,12 @@ import java.util.List;
 public class RetrievalService {
 
     private final HybridRetriever hybridRetriever;
+    private final RetrievalResultAssembler retrievalResultAssembler;
 
-    public RetrievalService(HybridRetriever hybridRetriever) {
+    public RetrievalService(HybridRetriever hybridRetriever,
+                            RetrievalResultAssembler retrievalResultAssembler) {
         this.hybridRetriever = hybridRetriever;
+        this.retrievalResultAssembler = retrievalResultAssembler;
     }
 
     public KnowledgeSearchResponse searchForAdmin(String query, String bizScope, Integer topK) {
@@ -48,7 +52,7 @@ public class RetrievalService {
         QueryFeatures queryFeatures = QueryFeatures.from(normalizedQuery);
         return hybridRetriever.retrieve(normalizedQuery, bizScope, limit).stream()
                 .filter(row -> isRelevant(row, queryFeatures))
-                .map(this::toResult)
+                .map(retrievalResultAssembler::assemble)
                 .toList();
     }
 
@@ -76,27 +80,6 @@ public class RetrievalService {
             }
         }
         return false;
-    }
-
-    private RetrievalResult toResult(KnowledgeChunkSearchRow row) {
-        return new RetrievalResult(
-                row.getDocumentPublicId().toString(),
-                row.getChunkId(),
-                row.getChunkIndex(),
-                row.getTitle(),
-                row.getBizScope(),
-                row.getScore() == null ? 0.0 : row.getScore(),
-                row.getSectionPath(),
-                snippet(row.getContent())
-        );
-    }
-
-    private String snippet(String content) {
-        if (content == null) {
-            return "";
-        }
-        String normalized = content.replaceAll("\\s+", " ").trim();
-        return normalized.length() <= 220 ? normalized : normalized.substring(0, 220) + "...";
     }
 
     private String nullToEmpty(String value) {

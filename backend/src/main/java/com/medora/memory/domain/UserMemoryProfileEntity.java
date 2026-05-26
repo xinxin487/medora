@@ -93,6 +93,11 @@ public class UserMemoryProfileEntity extends BaseEntity {
         this.lastAccessedAt = accessedAt == null ? OffsetDateTime.now() : accessedAt;
     }
 
+    public void expire() {
+        this.status = "INACTIVE";
+        this.expiresAt = OffsetDateTime.now();
+    }
+
     public UserAccountEntity getUserAccount() {
         return userAccount;
     }

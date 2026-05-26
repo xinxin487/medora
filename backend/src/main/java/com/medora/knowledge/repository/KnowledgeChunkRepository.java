@@ -36,7 +36,7 @@ public interface KnowledgeChunkRepository extends JpaRepository<KnowledgeChunkEn
                 c.section_path as sectionPath,
                 c.content as content,
                 (
-                    ts_rank_cd(c.content_tsv, plainto_tsquery('simple', :query)) * 10
+                    ts_rank_cd(c.content_tsv, plainto_tsquery('simple', :ftsQuery)) * 10
                     + case when lower(c.content) like lower(concat('%', :query, '%')) then 5 else 0 end
                     + case when lower(d.title) like lower(concat('%', :query, '%')) then 2 else 0 end
                 ) as score,
@@ -51,7 +51,7 @@ public interface KnowledgeChunkRepository extends JpaRepository<KnowledgeChunkEn
               and d.ingest_status = 'INDEXED'
               and (:bizScope is null or d.biz_scope = :bizScope)
               and (
-                    c.content_tsv @@ plainto_tsquery('simple', :query)
+                    c.content_tsv @@ plainto_tsquery('simple', :ftsQuery)
                     or lower(c.content) like lower(concat('%', :query, '%'))
                     or lower(d.title) like lower(concat('%', :query, '%'))
               )
@@ -59,6 +59,7 @@ public interface KnowledgeChunkRepository extends JpaRepository<KnowledgeChunkEn
             limit :limit
             """, nativeQuery = true)
     List<KnowledgeChunkSearchRow> searchPublished(@Param("query") String query,
+                                                  @Param("ftsQuery") String ftsQuery,
                                                   @Param("bizScope") String bizScope,
                                                   @Param("limit") int limit);
 }

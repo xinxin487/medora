@@ -2,6 +2,7 @@ package com.medora.knowledge.service;
 
 import com.medora.knowledge.repository.KnowledgeChunkSearchResult;
 import com.medora.knowledge.retriever.HybridRetriever;
+import com.medora.knowledge.retriever.RetrievalResultAssembler;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -16,7 +17,8 @@ class RetrievalServiceTest {
 
     @Test
     void shouldReturnEmptyResultForBlankQuery() {
-        RetrievalService service = new RetrievalService(mock(HybridRetriever.class));
+        RetrievalService service = new RetrievalService(mock(HybridRetriever.class),
+                new RetrievalResultAssembler());
 
         assertTrue(service.retrieve(" ", null, 5).isEmpty());
     }
@@ -24,7 +26,8 @@ class RetrievalServiceTest {
     @Test
     void shouldFilterOutIrrelevantVectorOnlyResult() {
         HybridRetriever hybridRetriever = mock(HybridRetriever.class);
-        RetrievalService service = new RetrievalService(hybridRetriever);
+        RetrievalService service = new RetrievalService(hybridRetriever,
+                new RetrievalResultAssembler());
         when(hybridRetriever.retrieve("我最近咳嗽，应该挂哪个科？", null, 5))
                 .thenReturn(List.of(cancelAppointmentRow()));
 
@@ -34,7 +37,8 @@ class RetrievalServiceTest {
     @Test
     void shouldKeepResultWhenQuerySharesChineseKeyTerms() {
         HybridRetriever hybridRetriever = mock(HybridRetriever.class);
-        RetrievalService service = new RetrievalService(hybridRetriever);
+        RetrievalService service = new RetrievalService(hybridRetriever,
+                new RetrievalResultAssembler());
         when(hybridRetriever.retrieve("取消挂号", null, 5))
                 .thenReturn(List.of(cancelAppointmentRow()));
 
