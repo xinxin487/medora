@@ -1,16 +1,50 @@
 package com.medora.agent.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medora.agent.tool.ToolDefinition;
+import com.medora.agent.tool.ToolExecutionContext;
+import com.medora.agent.tool.ToolExecutionResult;
 import com.medora.agent.tool.ToolNames;
+import com.medora.agent.tool.ToolRegistry;
 import com.medora.ai.config.AiProperties;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AgentModelGatewayTest {
 
-    private final AgentModelGateway gateway = new AgentModelGateway(new AiProperties(), new ObjectMapper());
+    private final AgentModelGateway gateway = new AgentModelGateway(new AiProperties(), new ObjectMapper(), testRegistry());
+
+    private static ToolRegistry testRegistry() {
+        return new ToolRegistry(List.of(
+                stubTool(ToolNames.QUERY_SCHEDULE_SLOTS),
+                stubTool(ToolNames.QUERY_DEPARTMENTS),
+                stubTool(ToolNames.QUERY_DOCTORS),
+                stubTool(ToolNames.GET_USER_APPOINTMENTS),
+                stubTool(ToolNames.BOOK_APPOINTMENT),
+                stubTool(ToolNames.CANCEL_APPOINTMENT),
+                stubTool(ToolNames.SEARCH_KNOWLEDGE)
+        ));
+    }
+
+    private static ToolDefinition stubTool(String name) {
+        return new ToolDefinition() {
+            @Override
+            public String name() { return name; }
+
+            @Override
+            public String description() { return name; }
+
+            @Override
+            public ToolExecutionResult execute(Map<String, Object> arguments, ToolExecutionContext context) {
+                return ToolExecutionResult.success(name, null, name);
+            }
+        };
+    }
 
     @Test
     void shouldParseModelPlannerJson() {

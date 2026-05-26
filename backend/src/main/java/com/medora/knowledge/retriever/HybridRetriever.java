@@ -19,12 +19,15 @@ public class HybridRetriever {
         this.vectorRetriever = vectorRetriever;
     }
 
+    private static final double MIN_SCORE_THRESHOLD = 0.15;
+
     public List<KnowledgeChunkSearchRow> retrieve(String query, String bizScope, int topK) {
         Map<Long, ScoredRow> merged = new LinkedHashMap<>();
         merge(merged, keywordRetriever.search(query, bizScope, Math.max(topK, 8)), 0.55);
         merge(merged, vectorRetriever.search(query, bizScope, Math.max(topK, 8)), 0.45);
         return merged.values().stream()
                 .map(ScoredRow::toSearchRow)
+                .filter(row -> row.getScore() >= MIN_SCORE_THRESHOLD)
                 .sorted((left, right) -> Double.compare(right.getScore(), left.getScore()))
                 .limit(topK)
                 .toList();

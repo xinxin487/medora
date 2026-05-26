@@ -11,6 +11,7 @@ public record AdminAgentTraceItem(
         String status,
         long latencyMs,
         String errorMessage,
+        String hallucinationRisk,
         OffsetDateTime createdAt
 ) {
 }

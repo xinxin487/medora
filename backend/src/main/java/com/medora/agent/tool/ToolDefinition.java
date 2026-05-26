@@ -8,5 +8,9 @@ public interface ToolDefinition {
 
     String description();
 
+    default ToolRiskLevel riskLevel() {
+        return ToolRiskLevel.LOW;
+    }
+
     ToolExecutionResult execute(Map<String, Object> arguments, ToolExecutionContext context);
 }

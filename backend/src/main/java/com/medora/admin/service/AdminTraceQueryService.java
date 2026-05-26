@@ -64,6 +64,9 @@ public class AdminTraceQueryService {
                 trace.getErrorMessage(),
                 trace.getRetrievalJson(),
                 trace.getToolEventsJson(),
+                trace.getSafetyEventsJson(),
+                trace.getHallucinationRisk(),
+                trace.getRiskFactorsJson(),
                 trace.getCreatedAt()
         );
     }
@@ -104,6 +107,7 @@ public class AdminTraceQueryService {
                 entity.getStatus(),
                 entity.getLatencyMs() == null ? 0 : entity.getLatencyMs(),
                 entity.getErrorMessage(),
+                entity.getHallucinationRisk(),
                 entity.getCreatedAt()
         );
     }

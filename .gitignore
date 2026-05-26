@@ -15,7 +15,6 @@ logs/
 .env
 .env.local
 .env.*.local
-.env.example
 
 # Java / Maven
 backend/target/

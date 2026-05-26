@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { startTransition, useEffect, useState } from "react";
-import { AdminShell } from "@/components/admin-shell";
-import { ApiClientError, apiFetch } from "@/lib/api/client";
+import { apiFetch } from "@/lib/api/client";
+import { useAuth } from "@/lib/hooks/use-auth";
 import type { PageResponse } from "@/lib/types";
+import { WorkspaceShell } from "@/components/workspace-shell";
+import { Panel } from "@/components/panel";
+import { Badge } from "@/components/badge";
 
 type ConversationItem = {
   conversationId: string;
@@ -62,9 +65,7 @@ type MessageItem = {
 };
 
 function formatTime(value: string | null) {
-  if (!value) {
-    return "暂无";
-  }
+  if (!value) return "暂无";
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
 }
 
@@ -77,11 +78,13 @@ function prettyJson(value: string) {
 }
 
 export default function AdminConversationsPage() {
+  const { isLoading: authLoading } = useAuth("ADMIN");
+
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState("");
   const [pageNo, setPageNo] = useState(1);
   const [page, setPage] = useState<PageResponse<ConversationItem> | null>(null);
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -93,11 +96,9 @@ export default function AdminConversationsPage() {
   }, [pageNo]);
 
   useEffect(() => {
-    if (!selectedConversationId) {
-      return;
-    }
-    void loadConversationDetail(selectedConversationId);
-  }, [selectedConversationId]);
+    if (!selectedId) return;
+    void loadDetail(selectedId);
+  }, [selectedId]);
 
   async function loadConversations(targetPage: number) {
     setLoading(true);
@@ -107,285 +108,305 @@ export default function AdminConversationsPage() {
         `/admin/conversations?pageNo=${targetPage}&pageSize=20&keyword=${encodeURIComponent(keyword)}&status=${encodeURIComponent(status)}`,
       );
       setPage(result);
-      if (!selectedConversationId && result.list.length > 0) {
-        startTransition(() => setSelectedConversationId(result.list[0].conversationId));
+      if (!selectedId && result.list.length > 0) {
+        startTransition(() => setSelectedId(result.list[0].conversationId));
       }
     } catch (cause) {
-      handleError(cause, "加载会话列表失败，请确认管理员权限是否可用。");
+      setError(cause instanceof Error ? cause.message : "加载会话列表失败。");
     } finally {
       setLoading(false);
     }
   }
 
-  async function loadConversationDetail(conversationId: string) {
+  async function loadDetail(conversationId: string) {
     setDetailLoading(true);
     setError(null);
     try {
-      const [detailResult, messageResult] = await Promise.all([
+      const [d, m] = await Promise.all([
         apiFetch<ConversationDetail>(`/admin/conversations/${conversationId}`),
-        apiFetch<PageResponse<MessageItem>>(`/admin/conversations/${conversationId}/messages?pageSize=100`),
+        apiFetch<PageResponse<MessageItem>>(
+          `/admin/conversations/${conversationId}/messages?pageSize=100`,
+        ),
       ]);
-      setDetail(detailResult);
-      setMessages(messageResult.list);
+      setDetail(d);
+      setMessages(m.list);
     } catch (cause) {
-      handleError(cause, "加载会话详情失败。");
+      setError(cause instanceof Error ? cause.message : "加载会话详情失败。");
     } finally {
       setDetailLoading(false);
     }
   }
 
-  function handleError(cause: unknown, fallback: string) {
-    if (cause instanceof ApiClientError) {
-      setError(`${cause.code}: ${cause.message}`);
-      return;
-    }
-    setError(fallback);
-  }
+  if (authLoading) return <LoadingSkeleton />;
 
   return (
-    <AdminShell
+    <WorkspaceShell
+      role="admin"
+      activeKey="conversations"
       title="会话查看"
-      description="这里聚合了会话列表、摘要、长期记忆和完整消息流，适合排查上下文裁剪、记忆污染和业务连续性问题。"
+      subtitle="会话列表、摘要、长期记忆和完整消息流。"
       actions={
         detail ? (
           <Link
-            className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
+            className="rounded-full border border-[var(--accent-main)] bg-[rgba(31,92,82,0.08)] px-4 py-2 text-sm font-semibold text-[var(--accent-main)]"
             href={`/admin/traces?conversationId=${detail.conversationId}`}
           >
             查看该会话 Trace
           </Link>
         ) : null
       }
-    >
-      <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
-        <aside className="space-y-4">
+      aside={
+        <Panel title="筛选会话" eyebrow="Filters">
           <form
-            className="rounded-[1.5rem] border border-slate-200 bg-white p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
+            onSubmit={(e) => {
+              e.preventDefault();
               setPageNo(1);
               void loadConversations(1);
             }}
+            className="space-y-3"
           >
-            <h2 className="text-base font-semibold">筛选条件</h2>
-            <div className="mt-3 space-y-3">
-              <input
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                placeholder="会话标题 / 用户名 / 手机 / 邮箱"
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-              />
-              <select
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                <option value="">全部状态</option>
-                <option value="ACTIVE">ACTIVE</option>
-              </select>
-              <button
-                className="w-full rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                disabled={loading}
-                type="submit"
-              >
-                {loading ? "加载中..." : "刷新列表"}
-              </button>
-            </div>
+            <input
+              className="w-full rounded-[1.1rem] border border-[var(--line-soft)] bg-white/80 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--accent-main)]"
+              placeholder="标题 / 用户名"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+            />
+            <select
+              className="w-full rounded-[1.1rem] border border-[var(--line-soft)] bg-white/80 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--accent-main)]"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+            >
+              <option value="">全部状态</option>
+              <option value="ACTIVE">ACTIVE</option>
+            </select>
+            <button
+              className="w-full rounded-full border border-[var(--line-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--ink-body)] disabled:opacity-60"
+              disabled={loading}
+              type="submit"
+            >
+              {loading ? "加载中..." : "刷新列表"}
+            </button>
           </form>
 
-          <div className="rounded-[1.5rem] border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-base font-semibold">会话列表</h2>
-                <span className="text-xs text-slate-500">{page?.total ?? 0} 条</span>
-              </div>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {page?.list.length ? (
-                page.list.map((item) => {
-                  const active = item.conversationId === selectedConversationId;
-                  return (
-                    <button
-                      key={item.conversationId}
-                      type="button"
-                      onClick={() => startTransition(() => setSelectedConversationId(item.conversationId))}
-                      className={`w-full px-4 py-4 text-left transition ${
-                        active ? "bg-emerald-50" : "hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="font-semibold">{item.title}</h3>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {item.userLabel} · {item.sceneType} · {item.messageCount} 条消息
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
-                          {item.status}
-                        </span>
-                      </div>
-                      <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">
-                        {item.summaryText || "暂无摘要。"}
-                      </p>
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="px-4 py-8 text-sm text-slate-500">暂无会话数据。</div>
-              )}
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+          <div className="mt-5 space-y-2">
+            {page?.list.map((item) => {
+              const active = item.conversationId === selectedId;
+              return (
+                <button
+                  key={item.conversationId}
+                  type="button"
+                  onClick={() =>
+                    startTransition(() => setSelectedId(item.conversationId))
+                  }
+                  className={`w-full rounded-[1.3rem] border px-3 py-3 text-left transition ${
+                    active
+                      ? "border-[var(--accent-main)] bg-[rgba(31,92,82,0.08)]"
+                      : "border-[var(--line-soft)] bg-white/78 hover:border-[var(--accent-warm)]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-[var(--ink-strong)] truncate">
+                      {item.title}
+                    </p>
+                    <Badge>{item.status}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--ink-subtle)]">
+                    {item.userLabel} · {item.messageCount} 条
+                  </p>
+                </button>
+              );
+            })}
+            {page?.list.length === 0 && (
+              <p className="py-4 text-center text-sm text-[var(--ink-subtle)]">
+                暂无会话
+              </p>
+            )}
+          </div>
+
+          {page && (
+            <div className="mt-3 flex items-center justify-between gap-2">
               <button
-                className="rounded-full border border-slate-200 px-3 py-1 text-sm disabled:opacity-50"
+                className="rounded-full border border-[var(--line-soft)] px-3 py-1 text-xs text-[var(--ink-body)] disabled:opacity-50"
                 disabled={pageNo <= 1 || loading}
-                onClick={() => setPageNo((current) => Math.max(current - 1, 1))}
+                onClick={() => setPageNo((c) => Math.max(c - 1, 1))}
                 type="button"
               >
                 上一页
               </button>
-              <span className="text-sm text-slate-500">第 {pageNo} 页</span>
+              <span className="text-xs text-[var(--ink-subtle)]">
+                第 {pageNo} 页 · {page.total} 条
+              </span>
               <button
-                className="rounded-full border border-slate-200 px-3 py-1 text-sm disabled:opacity-50"
-                disabled={!page?.hasNext || loading}
-                onClick={() => setPageNo((current) => current + 1)}
+                className="rounded-full border border-[var(--line-soft)] px-3 py-1 text-xs text-[var(--ink-body)] disabled:opacity-50"
+                disabled={!page.hasNext || loading}
+                onClick={() => setPageNo((c) => c + 1)}
                 type="button"
               >
                 下一页
               </button>
             </div>
-          </div>
-        </aside>
-
-        <section className="space-y-5">
-          {error ? (
-            <div className="rounded-[1.5rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700">
-              {error}
-            </div>
-          ) : null}
-
-          {detail ? (
-            <>
-              <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-xl font-semibold">{detail.title}</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                      {detail.userLabel} · {detail.sceneType} · {detail.messageCount} 条消息
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-600">
-                    <div>创建时间：{formatTime(detail.createdAt)}</div>
-                    <div>最后消息：{formatTime(detail.lastMessageAt)}</div>
-                    <div>最近摘要：{formatTime(detail.lastSummarizedAt)}</div>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid gap-4 xl:grid-cols-2">
-                  <article className="rounded-[1.25rem] border border-slate-200 bg-slate-50 p-4">
-                    <h3 className="font-semibold">会话摘要</h3>
-                    <p className="mt-3 text-sm leading-7 text-slate-700">
-                      {detail.summaryText || "暂无摘要内容。"}
-                    </p>
-                    <pre className="mt-4 overflow-x-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-emerald-100">
-                      {prettyJson(detail.summaryJson)}
-                    </pre>
-                  </article>
-
-                  <article className="rounded-[1.25rem] border border-slate-200 bg-slate-50 p-4">
-                    <h3 className="font-semibold">业务状态</h3>
-                    <pre className="mt-4 overflow-x-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-cyan-100">
-                      {prettyJson(detail.businessStateJson)}
-                    </pre>
-                  </article>
-                </div>
-              </div>
-
-              <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-                <div className="rounded-[1.5rem] border border-slate-200 bg-white">
-                  <div className="border-b border-slate-200 px-4 py-3">
-                    <h2 className="text-base font-semibold">长期记忆</h2>
-                  </div>
-                  <div className="divide-y divide-slate-100">
-                    {detail.memories.length ? (
-                      detail.memories.map((item) => (
-                        <article className="px-4 py-4" key={item.memoryId}>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-semibold">{item.memoryType}</h3>
-                            <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
-                              {item.confidence}
-                            </span>
-                          </div>
-                          <p className="mt-2 text-sm leading-6 text-slate-700">{item.summary}</p>
-                          <pre className="mt-3 overflow-x-auto rounded-2xl bg-slate-950 p-3 text-xs leading-6 text-slate-100">
-                            {prettyJson(item.valueJson)}
-                          </pre>
-                        </article>
-                      ))
-                    ) : (
-                      <div className="px-4 py-8 text-sm text-slate-500">暂无长期记忆。</div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-[1.5rem] border border-slate-200 bg-white">
-                  <div className="border-b border-slate-200 px-4 py-3">
-                    <h2 className="text-base font-semibold">消息流</h2>
-                  </div>
-                  <div className="divide-y divide-slate-100">
-                    {detailLoading ? (
-                      <div className="px-4 py-8 text-sm text-slate-500">正在加载会话详情...</div>
-                    ) : messages.length ? (
-                      messages.map((message) => (
-                        <article className="px-4 py-4" key={message.messageId}>
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                                  message.role === "ASSISTANT"
-                                    ? "bg-cyan-50 text-cyan-700"
-                                    : "bg-slate-100 text-slate-700"
-                                }`}
-                              >
-                                {message.role}
-                              </span>
-                              <span className="text-xs text-slate-500">{formatTime(message.createdAt)}</span>
-                            </div>
-                          </div>
-                          <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                            {message.content}
-                          </p>
-                          <details className="mt-3 rounded-2xl bg-slate-50 p-3">
-                            <summary className="cursor-pointer text-sm font-semibold text-slate-700">
-                              查看引用 / 工具 / token 预算
-                            </summary>
-                            <div className="mt-3 grid gap-3">
-                              <pre className="overflow-x-auto rounded-2xl bg-slate-950 p-3 text-xs leading-6 text-emerald-100">
-                                {prettyJson(message.citationJson)}
-                              </pre>
-                              <pre className="overflow-x-auto rounded-2xl bg-slate-950 p-3 text-xs leading-6 text-cyan-100">
-                                {prettyJson(message.toolCallJson)}
-                              </pre>
-                              <pre className="overflow-x-auto rounded-2xl bg-slate-950 p-3 text-xs leading-6 text-amber-100">
-                                {prettyJson(message.tokenUsageJson)}
-                              </pre>
-                            </div>
-                          </details>
-                        </article>
-                      ))
-                    ) : (
-                      <div className="px-4 py-8 text-sm text-slate-500">暂无消息。</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-8 text-sm text-slate-500">
-              先从左侧选择一个会话。
-            </div>
           )}
-        </section>
+        </Panel>
+      }
+    >
+      {error ? (
+        <div className="rounded-[1.2rem] border border-[rgba(190,92,67,0.18)] bg-[var(--danger-soft)] px-4 py-3 text-sm leading-6 text-[#8a4a3a]">
+          {error}
+        </div>
+      ) : null}
+
+      {detail ? (
+        <>
+          <Panel title={detail.title} eyebrow="Conversation Detail">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-[var(--ink-body)]">
+                  {detail.userLabel} · {detail.sceneType} · {detail.messageCount} 条消息
+                </p>
+                {detail.summaryText && (
+                  <p className="mt-3 text-sm leading-7 text-[var(--ink-body)]">
+                    {detail.summaryText}
+                  </p>
+                )}
+              </div>
+              <div className="rounded-[1.2rem] border border-[var(--line-soft)] bg-white/72 px-4 py-3 text-sm text-[var(--ink-subtle)]">
+                <div>创建：{formatTime(detail.createdAt)}</div>
+                <div>最后消息：{formatTime(detail.lastMessageAt)}</div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+              <div className="rounded-[1.2rem] border border-[var(--line-soft)] bg-white/72 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-subtle)]">
+                  会话摘要
+                </p>
+                <pre className="mt-3 overflow-x-auto rounded-2xl bg-[#14362f] p-3 text-xs leading-6 text-emerald-100">
+                  {prettyJson(detail.summaryJson)}
+                </pre>
+              </div>
+              <div className="rounded-[1.2rem] border border-[var(--line-soft)] bg-white/72 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-subtle)]">
+                  业务状态
+                </p>
+                <pre className="mt-3 overflow-x-auto rounded-2xl bg-[#14362f] p-3 text-xs leading-6 text-cyan-100">
+                  {prettyJson(detail.businessStateJson)}
+                </pre>
+              </div>
+            </div>
+          </Panel>
+
+          <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+            <Panel title="长期记忆" eyebrow="Memories">
+              {detail.memories.length === 0 ? (
+                <EmptyState text="暂无长期记忆。" />
+              ) : (
+                <div className="space-y-3">
+                  {detail.memories.map((mem) => (
+                    <div
+                      key={mem.memoryId}
+                      className="rounded-[1.3rem] border border-[var(--line-soft)] bg-white/84 p-4"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Badge tone="soft">{mem.memoryType}</Badge>
+                        <span className="text-xs text-[var(--accent-warm)]">
+                          {mem.confidence}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm text-[var(--ink-body)]">
+                        {mem.summary}
+                      </p>
+                      <pre className="mt-2 overflow-x-auto rounded-2xl bg-[#14362f] p-3 text-xs leading-6 text-slate-100">
+                        {prettyJson(mem.valueJson)}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Panel>
+
+            <Panel title="消息流" eyebrow="Messages">
+              {detailLoading ? (
+                <p className="py-4 text-sm text-[var(--ink-subtle)]">
+                  正在加载...
+                </p>
+              ) : messages.length === 0 ? (
+                <EmptyState text="暂无消息。" />
+              ) : (
+                <div className="space-y-3">
+                  {messages.map((msg) => (
+                    <div
+                      key={msg.messageId}
+                      className="rounded-[1.3rem] border border-[var(--line-soft)] bg-white/84 p-4"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          tone={msg.role === "ASSISTANT" ? "soft" : "default"}
+                        >
+                          {msg.role}
+                        </Badge>
+                        <span className="text-xs text-[var(--ink-subtle)]">
+                          {formatTime(msg.createdAt)}
+                        </span>
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-[var(--ink-body)]">
+                        {msg.content}
+                      </p>
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-xs font-semibold text-[var(--accent-main)]">
+                          引用 / 工具调用
+                        </summary>
+                        <div className="mt-2 grid gap-2">
+                          <pre className="overflow-x-auto rounded-2xl bg-[#14362f] p-2 text-xs leading-5 text-emerald-100">
+                            {prettyJson(msg.citationJson)}
+                          </pre>
+                          <pre className="overflow-x-auto rounded-2xl bg-[#14362f] p-2 text-xs leading-5 text-cyan-100">
+                            {prettyJson(msg.toolCallJson)}
+                          </pre>
+                          <pre className="overflow-x-auto rounded-2xl bg-[#14362f] p-2 text-xs leading-5 text-amber-100">
+                            {prettyJson(msg.tokenUsageJson)}
+                          </pre>
+                        </div>
+                      </details>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Panel>
+          </div>
+        </>
+      ) : (
+        <Panel title="会话详情" eyebrow="Detail">
+          <EmptyState text="先从右侧选择一个会话。" />
+        </Panel>
+      )}
+    </WorkspaceShell>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="rounded-[1.3rem] border border-dashed border-[var(--line-soft)] bg-[rgba(255,255,255,0.68)] px-4 py-8 text-sm leading-7 text-[var(--ink-subtle)]">
+      {text}
+    </div>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <main className="min-h-screen px-4 py-5 sm:px-6">
+      <div className="mx-auto max-w-[1520px]">
+        <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+          <div className="h-[calc(100vh-2.5rem)] animate-pulse rounded-[2rem] bg-slate-200" />
+          <div className="space-y-5">
+            <div className="h-48 animate-pulse rounded-[1.75rem] bg-slate-100" />
+            <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+              <div className="h-48 animate-pulse rounded-[1.75rem] bg-slate-100" />
+              <div className="h-48 animate-pulse rounded-[1.75rem] bg-slate-100" />
+            </div>
+          </div>
+          <div className="h-[calc(100vh-2.5rem)] animate-pulse rounded-[1.75rem] bg-slate-100" />
+        </div>
       </div>
-    </AdminShell>
+    </main>
   );
 }

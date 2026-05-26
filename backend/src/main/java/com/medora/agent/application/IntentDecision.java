@@ -15,7 +15,20 @@ public record IntentDecision(
 
     public record ToolInvocation(
             String toolName,
-            Map<String, Object> arguments
+            Map<String, Object> arguments,
+            ParamSource paramSource
     ) {
+        public ToolInvocation(String toolName, Map<String, Object> arguments) {
+            this(toolName, arguments, ParamSource.MODEL_INFERRED);
+        }
+
+        public static ToolInvocation userProvided(String toolName, Map<String, Object> arguments) {
+            return new ToolInvocation(toolName, arguments, ParamSource.USER_PROVIDED);
+        }
+    }
+
+    public enum ParamSource {
+        USER_PROVIDED,
+        MODEL_INFERRED
     }
 }

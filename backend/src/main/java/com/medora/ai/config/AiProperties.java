@@ -11,6 +11,8 @@ public class AiProperties {
     private String chatProvider = "local";
     private String apiKey = "";
     private String baseUrl = "https://api.openai.com/v1";
+    private String chatApiKey = "";
+    private String chatBaseUrl = "";
     private String chatModel = "gpt-4.1-mini";
     private String embeddingModel = "local-hash-1024";
     private int embeddingDimensions = 1024;
@@ -46,6 +48,22 @@ public class AiProperties {
 
     public void setBaseUrl(String baseUrl) {
         this.baseUrl = baseUrl;
+    }
+
+    public String getChatApiKey() {
+        return chatApiKey;
+    }
+
+    public void setChatApiKey(String chatApiKey) {
+        this.chatApiKey = chatApiKey;
+    }
+
+    public String getChatBaseUrl() {
+        return chatBaseUrl;
+    }
+
+    public void setChatBaseUrl(String chatBaseUrl) {
+        this.chatBaseUrl = chatBaseUrl;
     }
 
     public String getChatModel() {

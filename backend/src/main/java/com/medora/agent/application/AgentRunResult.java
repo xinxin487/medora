@@ -12,6 +12,14 @@ public record AgentRunResult(
         List<ToolExecutionResult> toolResults,
         String citationJson,
         String toolCallJson,
-        String tokenUsageJson
+        String tokenUsageJson,
+        String safetyEventsJson,
+        String hallucinationRisk,
+        String riskFactorsJson
 ) {
+    public AgentRunResult {
+        safetyEventsJson = safetyEventsJson == null || safetyEventsJson.isBlank() ? "[]" : safetyEventsJson;
+        hallucinationRisk = hallucinationRisk == null || hallucinationRisk.isBlank() ? "LOW" : hallucinationRisk;
+        riskFactorsJson = riskFactorsJson == null || riskFactorsJson.isBlank() ? "[]" : riskFactorsJson;
+    }
 }

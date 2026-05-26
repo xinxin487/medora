@@ -27,4 +27,12 @@ public class ToolRegistry {
         }
         return tool;
     }
+
+    public boolean isRegistered(String toolName) {
+        return tools.containsKey(toolName);
+    }
+
+    public java.util.Set<String> allToolNames() {
+        return tools.keySet();
+    }
 }

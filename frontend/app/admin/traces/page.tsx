@@ -1,9 +1,12 @@
 "use client";
 
 import { startTransition, useEffect, useState } from "react";
-import { AdminShell } from "@/components/admin-shell";
-import { ApiClientError, apiFetch } from "@/lib/api/client";
+import { apiFetch } from "@/lib/api/client";
+import { useAuth } from "@/lib/hooks/use-auth";
 import type { PageResponse } from "@/lib/types";
+import { WorkspaceShell } from "@/components/workspace-shell";
+import { Panel } from "@/components/panel";
+import { Badge } from "@/components/badge";
 
 type TraceItem = {
   traceId: string;
@@ -35,6 +38,8 @@ function formatTime(value: string) {
 }
 
 export default function AdminTracePage() {
+  const { isLoading: authLoading } = useAuth("ADMIN");
+
   const [traceId, setTraceId] = useState("");
   const [conversationId, setConversationId] = useState("");
   const [status, setStatus] = useState("");
@@ -43,7 +48,6 @@ export default function AdminTracePage() {
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,16 +56,12 @@ export default function AdminTracePage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const nextConversationId = params.get("conversationId");
-    if (nextConversationId) {
-      setConversationId(nextConversationId);
-    }
+    const cid = params.get("conversationId");
+    if (cid) setConversationId(cid);
   }, []);
 
   useEffect(() => {
-    if (!selectedTraceId) {
-      return;
-    }
+    if (!selectedTraceId) return;
     void loadDetail(selectedTraceId);
   }, [selectedTraceId]);
 
@@ -77,191 +77,210 @@ export default function AdminTracePage() {
         startTransition(() => setSelectedTraceId(result.list[0].traceId));
       }
     } catch (cause) {
-      handleError(cause, "加载 Trace 列表失败。");
+      setError(cause instanceof Error ? cause.message : "加载 Trace 列表失败。");
     } finally {
       setLoading(false);
     }
   }
 
   async function loadDetail(targetTraceId: string) {
-    setDetailLoading(true);
-    setError(null);
     try {
-      const result = await apiFetch<TraceDetail>(`/admin/agent-traces/${targetTraceId}`);
+      const result = await apiFetch<TraceDetail>(
+        `/admin/agent-traces/${targetTraceId}`,
+      );
       setDetail(result);
     } catch (cause) {
-      handleError(cause, "加载 Trace 详情失败。");
-    } finally {
-      setDetailLoading(false);
+      setError(cause instanceof Error ? cause.message : "加载详情失败。");
     }
   }
 
-  function handleError(cause: unknown, fallback: string) {
-    if (cause instanceof ApiClientError) {
-      setError(`${cause.code}: ${cause.message}`);
-      return;
-    }
-    setError(fallback);
-  }
+  if (authLoading) return <LoadingSkeleton />;
 
   return (
-    <AdminShell
-      title="Agent Trace"
-      description="这里集中查看一次对话请求的路由决策、工具事件、检索结果和耗时，适合定位工具边界、检索噪音和失败回退。"
-    >
-      <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
-        <aside className="space-y-4">
+    <WorkspaceShell
+      role="admin"
+      activeKey="traces"
+      title="链路追踪"
+      subtitle="路由决策、工具事件、检索结果和耗时。"
+      aside={
+        <Panel title="筛选 Trace" eyebrow="Filters">
           <form
-            className="rounded-[1.5rem] border border-slate-200 bg-white p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
+            onSubmit={(e) => {
+              e.preventDefault();
               setPageNo(1);
               void loadList(1);
             }}
+            className="space-y-3"
           >
-            <h2 className="text-base font-semibold">筛选条件</h2>
-            <div className="mt-3 space-y-3">
-              <input
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                placeholder="traceId"
-                value={traceId}
-                onChange={(event) => setTraceId(event.target.value)}
-              />
-              <input
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                placeholder="conversationId"
-                value={conversationId}
-                onChange={(event) => setConversationId(event.target.value)}
-              />
-              <select
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                <option value="">全部状态</option>
-                <option value="SUCCESS">SUCCESS</option>
-                <option value="FAILED">FAILED</option>
-              </select>
-              <button
-                className="w-full rounded-xl bg-cyan-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                disabled={loading}
-                type="submit"
-              >
-                {loading ? "加载中..." : "刷新列表"}
-              </button>
-            </div>
+            <input
+              className="w-full rounded-[1.1rem] border border-[var(--line-soft)] bg-white/80 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--accent-main)]"
+              placeholder="Trace ID"
+              value={traceId}
+              onChange={(e) => setTraceId(e.target.value)}
+            />
+            <input
+              className="w-full rounded-[1.1rem] border border-[var(--line-soft)] bg-white/80 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--accent-main)]"
+              placeholder="会话 ID"
+              value={conversationId}
+              onChange={(e) => setConversationId(e.target.value)}
+            />
+            <select
+              className="w-full rounded-[1.1rem] border border-[var(--line-soft)] bg-white/80 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--accent-main)]"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+            >
+              <option value="">全部状态</option>
+              <option value="SUCCESS">SUCCESS</option>
+              <option value="FAILED">FAILED</option>
+            </select>
+            <button
+              className="w-full rounded-full border border-[var(--line-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--ink-body)] disabled:opacity-60"
+              disabled={loading}
+              type="submit"
+            >
+              {loading ? "加载中..." : "刷新列表"}
+            </button>
           </form>
 
-          <div className="rounded-[1.5rem] border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-base font-semibold">Trace 列表</h2>
-                <span className="text-xs text-slate-500">{page?.total ?? 0} 条</span>
-              </div>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {page?.list.length ? (
-                page.list.map((item) => (
-                  <button
-                    key={item.traceId}
-                    type="button"
-                    onClick={() => startTransition(() => setSelectedTraceId(item.traceId))}
-                    className={`w-full px-4 py-4 text-left transition ${
-                      item.traceId === selectedTraceId ? "bg-cyan-50" : "hover:bg-slate-50"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="font-semibold">{item.intentType}</h3>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {item.routeMode} · {item.latencyMs} ms
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
-                        {item.status}
-                      </span>
-                    </div>
-                    <p className="mt-2 line-clamp-2 text-xs leading-6 text-slate-500">{item.traceId}</p>
-                  </button>
-                ))
-              ) : (
-                <div className="px-4 py-8 text-sm text-slate-500">暂无 Trace 数据。</div>
-              )}
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+          <div className="mt-5 space-y-2">
+            {page?.list.map((item) => {
+              const active = item.traceId === selectedTraceId;
+              return (
+                <button
+                  key={item.traceId}
+                  type="button"
+                  onClick={() =>
+                    startTransition(() => setSelectedTraceId(item.traceId))
+                  }
+                  className={`w-full rounded-[1.3rem] border px-3 py-3 text-left transition ${
+                    active
+                      ? "border-[var(--accent-main)] bg-[rgba(31,92,82,0.08)]"
+                      : "border-[var(--line-soft)] bg-white/78 hover:border-[var(--accent-warm)]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-[var(--ink-strong)]">
+                      {item.intentType}
+                    </p>
+                    <Badge
+                      tone={item.status === "SUCCESS" ? "success" : "warning"}
+                    >
+                      {item.status}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--ink-subtle)]">
+                    {item.routeMode} · {item.latencyMs} ms
+                  </p>
+                </button>
+              );
+            })}
+            {page?.list.length === 0 && (
+              <p className="py-4 text-center text-sm text-[var(--ink-subtle)]">
+                暂无 Trace
+              </p>
+            )}
+          </div>
+
+          {page && (
+            <div className="mt-3 flex items-center justify-between gap-2">
               <button
-                className="rounded-full border border-slate-200 px-3 py-1 text-sm disabled:opacity-50"
+                className="rounded-full border border-[var(--line-soft)] px-3 py-1 text-xs text-[var(--ink-body)] disabled:opacity-50"
                 disabled={pageNo <= 1 || loading}
-                onClick={() => setPageNo((current) => Math.max(current - 1, 1))}
+                onClick={() => setPageNo((c) => Math.max(c - 1, 1))}
                 type="button"
               >
                 上一页
               </button>
-              <span className="text-sm text-slate-500">第 {pageNo} 页</span>
+              <span className="text-xs text-[var(--ink-subtle)]">
+                第 {pageNo} 页 · {page.total} 条
+              </span>
               <button
-                className="rounded-full border border-slate-200 px-3 py-1 text-sm disabled:opacity-50"
-                disabled={!page?.hasNext || loading}
-                onClick={() => setPageNo((current) => current + 1)}
+                className="rounded-full border border-[var(--line-soft)] px-3 py-1 text-xs text-[var(--ink-body)] disabled:opacity-50"
+                disabled={!page.hasNext || loading}
+                onClick={() => setPageNo((c) => c + 1)}
                 type="button"
               >
                 下一页
               </button>
             </div>
-          </div>
-        </aside>
-
-        <section className="space-y-5">
-          {error ? (
-            <div className="rounded-[1.5rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700">
-              {error}
-            </div>
-          ) : null}
-
-          {detail ? (
-            <>
-              <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-xl font-semibold">{detail.intentType}</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                      {detail.routeMode} · {detail.status} · {detail.latencyMs} ms
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-600">
-                    <div>创建时间：{formatTime(detail.createdAt)}</div>
-                    <div>会话：{detail.conversationId}</div>
-                    <div>消息：{detail.messageId ?? "无"}</div>
-                  </div>
-                </div>
-                {detail.errorMessage ? (
-                  <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700">
-                    {detail.errorMessage}
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="grid gap-5 xl:grid-cols-2">
-                <article className="rounded-[1.5rem] border border-slate-200 bg-white p-5">
-                  <h3 className="font-semibold">检索结果 JSON</h3>
-                  <pre className="mt-4 overflow-x-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-emerald-100">
-                    {prettyJson(detail.retrievalJson)}
-                  </pre>
-                </article>
-                <article className="rounded-[1.5rem] border border-slate-200 bg-white p-5">
-                  <h3 className="font-semibold">工具事件 JSON</h3>
-                  <pre className="mt-4 overflow-x-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-cyan-100">
-                    {prettyJson(detail.toolEventsJson)}
-                  </pre>
-                </article>
-              </div>
-            </>
-          ) : (
-            <div className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-8 text-sm text-slate-500">
-              {detailLoading ? "正在加载详情..." : "先从左侧选择一个 Trace。"}
-            </div>
           )}
-        </section>
+        </Panel>
+      }
+    >
+      {error ? (
+        <div className="rounded-[1.2rem] border border-[rgba(190,92,67,0.18)] bg-[var(--danger-soft)] px-4 py-3 text-sm leading-6 text-[#8a4a3a]">
+          {error}
+        </div>
+      ) : null}
+
+      {detail ? (
+        <>
+          <Panel title={detail.intentType} eyebrow="Trace Detail">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-[var(--ink-body)]">
+                  {detail.routeMode} · {detail.status} · {detail.latencyMs} ms
+                </p>
+              </div>
+              <div className="rounded-[1.2rem] border border-[var(--line-soft)] bg-white/72 px-4 py-3 text-sm text-[var(--ink-subtle)]">
+                <div>创建：{formatTime(detail.createdAt)}</div>
+                <div>会话：{detail.conversationId}</div>
+                <div>消息：{detail.messageId ?? "无"}</div>
+              </div>
+            </div>
+            {detail.errorMessage && (
+              <div className="mt-4 rounded-[1.2rem] border border-[rgba(190,92,67,0.18)] bg-[var(--danger-soft)] px-4 py-3 text-sm text-[#8a4a3a]">
+                {detail.errorMessage}
+              </div>
+            )}
+          </Panel>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <Panel title="检索结果" eyebrow="Retrieval">
+              <pre className="overflow-x-auto rounded-2xl bg-[#14362f] p-4 text-xs leading-6 text-emerald-100">
+                {prettyJson(detail.retrievalJson)}
+              </pre>
+            </Panel>
+            <Panel title="工具事件" eyebrow="Tool Events">
+              <pre className="overflow-x-auto rounded-2xl bg-[#14362f] p-4 text-xs leading-6 text-cyan-100">
+                {prettyJson(detail.toolEventsJson)}
+              </pre>
+            </Panel>
+          </div>
+        </>
+      ) : (
+        <Panel title="Trace 详情" eyebrow="Detail">
+          <EmptyState text="先从右侧选择一个 Trace。" />
+        </Panel>
+      )}
+    </WorkspaceShell>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="rounded-[1.3rem] border border-dashed border-[var(--line-soft)] bg-[rgba(255,255,255,0.68)] px-4 py-8 text-sm leading-7 text-[var(--ink-subtle)]">
+      {text}
+    </div>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <main className="min-h-screen px-4 py-5 sm:px-6">
+      <div className="mx-auto max-w-[1520px]">
+        <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+          <div className="h-[calc(100vh-2.5rem)] animate-pulse rounded-[2rem] bg-slate-200" />
+          <div className="space-y-5">
+            <div className="h-48 animate-pulse rounded-[1.75rem] bg-slate-100" />
+            <div className="grid gap-5 xl:grid-cols-2">
+              <div className="h-48 animate-pulse rounded-[1.75rem] bg-slate-100" />
+              <div className="h-48 animate-pulse rounded-[1.75rem] bg-slate-100" />
+            </div>
+          </div>
+          <div className="h-[calc(100vh-2.5rem)] animate-pulse rounded-[1.75rem] bg-slate-100" />
+        </div>
       </div>
-    </AdminShell>
+    </main>
   );
 }

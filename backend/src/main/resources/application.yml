@@ -43,6 +43,8 @@ medora:
     chat-provider: ${AI_CHAT_PROVIDER:local}
     api-key: ${AI_API_KEY:${OPENAI_API_KEY:${ANTHROPIC_API_KEY:}}}
     base-url: ${AI_BASE_URL:${OPENAI_BASE_URL:${ANTHROPIC_BASE_URL:https://api.openai.com/v1}}}
+    chat-api-key: ${AI_CHAT_API_KEY:${ANTHROPIC_API_KEY:${AI_API_KEY:}}}
+    chat-base-url: ${AI_CHAT_BASE_URL:${ANTHROPIC_BASE_URL:${AI_BASE_URL:}}}
     chat-model: ${AI_CHAT_MODEL:${CHAT_MODEL:${ANTHROPIC_MODEL:gpt-4.1-mini}}}
     embedding-model: ${AI_EMBEDDING_MODEL:${EMBEDDING_MODEL:local-hash-1024}}
     embedding-dimensions: ${AI_EMBEDDING_DIMENSIONS:1024}

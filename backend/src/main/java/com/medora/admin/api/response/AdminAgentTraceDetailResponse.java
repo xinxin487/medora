@@ -13,6 +13,9 @@ public record AdminAgentTraceDetailResponse(
         String errorMessage,
         String retrievalJson,
         String toolEventsJson,
+        String safetyEventsJson,
+        String hallucinationRisk,
+        String riskFactorsJson,
         OffsetDateTime createdAt
 ) {
 }

@@ -5,6 +5,7 @@ import com.medora.agent.tool.ToolDefinition;
 import com.medora.agent.tool.ToolExecutionContext;
 import com.medora.agent.tool.ToolExecutionResult;
 import com.medora.agent.tool.ToolNames;
+import com.medora.agent.tool.ToolRiskLevel;
 import com.medora.appointment.api.request.CancelAppointmentRequest;
 import com.medora.appointment.service.AppointmentCommandService;
 import com.medora.common.exception.BusinessException;
@@ -30,6 +31,11 @@ public class CancelAppointmentTool implements ToolDefinition {
     @Override
     public String description() {
         return "取消当前用户预约";
+    }
+
+    @Override
+    public ToolRiskLevel riskLevel() {
+        return ToolRiskLevel.HIGH;
     }
 
     @Override

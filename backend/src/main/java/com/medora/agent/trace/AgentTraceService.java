@@ -30,7 +30,10 @@ public class AgentTraceService {
                 record.toolEventsJson(),
                 record.latencyMs(),
                 record.status(),
-                record.errorMessage()
+                record.errorMessage(),
+                record.safetyEventsJson(),
+                record.hallucinationRisk(),
+                record.riskFactorsJson()
         ));
         medoraMetricsService.recordAgentTrace(
                 record.intentType(),
@@ -50,7 +53,15 @@ public class AgentTraceService {
             String toolEventsJson,
             long latencyMs,
             String status,
-            String errorMessage
+            String errorMessage,
+            String safetyEventsJson,
+            String hallucinationRisk,
+            String riskFactorsJson
     ) {
+        public AgentTraceRecord {
+            safetyEventsJson = safetyEventsJson == null || safetyEventsJson.isBlank() ? "[]" : safetyEventsJson;
+            hallucinationRisk = hallucinationRisk == null || hallucinationRisk.isBlank() ? "LOW" : hallucinationRisk;
+            riskFactorsJson = riskFactorsJson == null || riskFactorsJson.isBlank() ? "[]" : riskFactorsJson;
+        }
     }
 }

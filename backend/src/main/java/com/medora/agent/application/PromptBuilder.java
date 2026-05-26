@@ -79,10 +79,27 @@ public class PromptBuilder {
                 .toList());
         promptPayload.put("retrievalResults", prunedRetrievalResults);
         promptPayload.put("toolResults", toolResults);
-        promptPayload.put("contextNotes", List.of(
+        List<String> contextNotes = new java.util.ArrayList<>(List.of(
                 "会话摘要和长期记忆只作上下文提示，与当前用户输入冲突时以当前输入为准。",
                 "业务事实以工具结果和知识引用为准，不得用长期记忆替代实时结果。"
         ));
+        if (retrievalResults.isEmpty() && intent.needRetrieval()) {
+            contextNotes.add("当前知识库未检索到与用户问题相关的内容。回答时应明确说明这一点，不要编造规则或流程。可以建议用户咨询医院导诊台。");
+        }
+        // 动态安全策略注入
+        if (intent.intentType() != null) {
+            String it = intent.intentType();
+            if (it.contains("BOOK_APPOINTMENT") || it.contains("bookAppointment")) {
+                contextNotes.add("当前处于预约操作阶段，必须展示完整预约信息后才能确认。");
+            }
+            if (it.contains("CANCEL_APPOINTMENT") || it.contains("cancelAppointment")) {
+                contextNotes.add("当前处于取消操作阶段，必须展示取消后的不可逆提醒。");
+            }
+            if (it.contains("QUERY_DEPARTMENTS") || it.contains("MEDICAL")) {
+                contextNotes.add("当前用户描述了医疗症状，只能建议科室，不做诊断。");
+            }
+        }
+        promptPayload.put("contextNotes", contextNotes);
 
         String modelUserPrompt = knowledgeJsonService.toJson(promptPayload);
         int estimatedAfterPrune = tokenBudgetPlanner.estimateTextTokens(modelUserPrompt);

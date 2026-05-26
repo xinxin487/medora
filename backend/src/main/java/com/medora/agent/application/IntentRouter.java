@@ -99,7 +99,7 @@ public class IntentRouter {
                 intentType,
                 RouteMode.TOOL_ONLY,
                 false,
-                List.of(new IntentDecision.ToolInvocation(toolName, arguments))
+                List.of(IntentDecision.ToolInvocation.userProvided(toolName, arguments))
         );
     }
 

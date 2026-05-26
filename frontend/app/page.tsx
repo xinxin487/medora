@@ -40,13 +40,13 @@ export default function HomePage() {
 
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
-              href="/appointments"
+              href="/login"
               className="rounded-full bg-[var(--ink-strong)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(20,42,39,0.18)] transition hover:translate-y-[-1px]"
             >
-              进入预约中心
+              进入工作台
             </Link>
             <Link
-              href="/chat"
+              href="/app/assistant"
               className="rounded-full border border-[var(--accent-main)] bg-[rgba(31,92,82,0.08)] px-6 py-3 text-sm font-semibold text-[var(--accent-main)] transition hover:border-[var(--accent-main-strong)]"
             >
               开始导诊助手
@@ -141,7 +141,7 @@ export default function HomePage() {
               通过日期、科室、医生和时段筛选，把真实可预约号源组织成可决策的界面。
             </p>
             <Link
-              href="/appointments"
+              href="/app/appointments"
               className="mt-5 inline-flex text-sm font-semibold text-[var(--accent-main)]"
             >
               去看正式预约页
@@ -156,7 +156,7 @@ export default function HomePage() {
             <p className="mt-3 text-sm leading-7 text-[var(--ink-body)]">
               用带引用、带工具状态和带上下文连续性的对话方式，帮助用户迈向下一步动作。
             </p>
-            <Link href="/chat" className="mt-5 inline-flex text-sm font-semibold text-[var(--accent-main)]">
+            <Link href="/app/assistant" className="mt-5 inline-flex text-sm font-semibold text-[var(--accent-main)]">
               去看正式导诊页
             </Link>
           </article>

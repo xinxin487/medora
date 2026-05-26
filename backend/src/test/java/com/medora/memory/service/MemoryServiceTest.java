@@ -56,7 +56,10 @@ class MemoryServiceTest {
                 List.of(ToolExecutionResult.success(ToolNames.BOOK_APPOINTMENT, appointment, "预约成功")),
                 "[]",
                 "{}",
-                "{}"
+                "{}",
+                "[]",
+                "LOW",
+                "[]"
         );
 
         service.captureFromAgentRun(userAccount, "帮我预约这个下午号", runResult);

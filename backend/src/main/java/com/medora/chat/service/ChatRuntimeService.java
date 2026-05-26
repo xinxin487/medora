@@ -191,7 +191,10 @@ public class ChatRuntimeService {
                     agentRunResult.toolCallJson(),
                     latencyMs,
                     "SUCCESS",
-                    null
+                    null,
+                    agentRunResult.safetyEventsJson(),
+                    agentRunResult.hallucinationRisk(),
+                    agentRunResult.riskFactorsJson()
             ));
             conversationSummaryService.refreshAfterAssistantReply(conversation, userMessage, reply, agentRunResult);
             memoryService.captureFromAgentRun(conversation.getUserAccount(), userMessage, agentRunResult);
@@ -203,9 +206,14 @@ public class ChatRuntimeService {
             ChatMessageEntity assistantMessage = chatMessageRepository.findById(session.assistantMessageId())
                     .orElseThrow(() -> new BusinessException("CHAT_MESSAGE_NOT_FOUND", HttpStatus.NOT_FOUND,
                             "assistant message not found"));
+            String errorCode = ex instanceof BusinessException be ? be.getCode() : null;
             String errorMessage = ex instanceof BusinessException ? ex.getMessage() : "chat stream failed";
+            boolean isSafetyRejection = "AGENT_SAFETY_REJECTED".equals(errorCode);
+            String reply = isSafetyRejection
+                    ? "抱歉，你的消息已被安全策略拦截。请调整后重新提问。"
+                    : "抱歉，这次对话处理失败：" + errorMessage;
             assistantMessage.completeAssistantContent(
-                    "抱歉，这次对话处理失败：" + errorMessage,
+                    reply,
                     "{\"inputTokens\":0,\"outputTokens\":0}",
                     "[]",
                     "{}"
@@ -214,6 +222,9 @@ public class ChatRuntimeService {
                     .orElseThrow(() -> new BusinessException("CHAT_CONVERSATION_NOT_FOUND", HttpStatus.NOT_FOUND,
                             "conversation not found"));
             conversation.touchLastMessageAt(OffsetDateTime.now());
+            String safetyEvents = isSafetyRejection
+                    ? ("[{\"type\":\"SAFETY_REJECTED\",\"reason\":\"" + errorMessage + "\",\"timestamp\":\"" + OffsetDateTime.now() + "\"}]")
+                    : "[]";
             agentTraceService.record(new AgentTraceService.AgentTraceRecord(
                     session.traceId(),
                     conversation,
@@ -223,8 +234,11 @@ public class ChatRuntimeService {
                     "[]",
                     "[]",
                     latencyMs,
-                    "FAILED",
-                    errorMessage
+                    isSafetyRejection ? "SAFETY_REJECTED" : "FAILED",
+                    errorMessage,
+                    safetyEvents,
+                    "LOW",
+                    "[]"
             ));
         });
     }

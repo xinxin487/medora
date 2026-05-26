@@ -62,7 +62,10 @@ class ConversationSummaryServiceTest {
                 )),
                 "[]",
                 "{}",
-                "{}"
+                "{}",
+                "[]",
+                "LOW",
+                "[]"
         );
 
         service.refreshAfterAssistantReply(conversation, "帮我查明天下午呼吸内科号源", "查到 1 条号源", runResult);

@@ -53,6 +53,19 @@ public class AgentTraceEntity extends BaseEntity {
     @Column(name = "error_message")
     private String errorMessage;
 
+    @Column(name = "safety_events_json", nullable = false)
+    @ColumnTransformer(write = "?::jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String safetyEventsJson = "[]";
+
+    @Column(name = "hallucination_risk", nullable = false)
+    private String hallucinationRisk = "LOW";
+
+    @Column(name = "risk_factors_json", nullable = false)
+    @ColumnTransformer(write = "?::jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String riskFactorsJson = "[]";
+
     public static AgentTraceEntity of(String traceId,
                                       ConversationEntity conversation,
                                       ChatMessageEntity message,
@@ -63,6 +76,23 @@ public class AgentTraceEntity extends BaseEntity {
                                       long latencyMs,
                                       String status,
                                       String errorMessage) {
+        return of(traceId, conversation, message, intentType, routeMode, retrievalJson, toolEventsJson,
+                latencyMs, status, errorMessage, "[]", "LOW", "[]");
+    }
+
+    public static AgentTraceEntity of(String traceId,
+                                      ConversationEntity conversation,
+                                      ChatMessageEntity message,
+                                      String intentType,
+                                      String routeMode,
+                                      String retrievalJson,
+                                      String toolEventsJson,
+                                      long latencyMs,
+                                      String status,
+                                      String errorMessage,
+                                      String safetyEventsJson,
+                                      String hallucinationRisk,
+                                      String riskFactorsJson) {
         AgentTraceEntity entity = new AgentTraceEntity();
         entity.traceId = traceId;
         entity.conversation = conversation;
@@ -74,6 +104,9 @@ public class AgentTraceEntity extends BaseEntity {
         entity.latencyMs = latencyMs;
         entity.status = status;
         entity.errorMessage = errorMessage;
+        entity.safetyEventsJson = safetyEventsJson == null || safetyEventsJson.isBlank() ? "[]" : safetyEventsJson;
+        entity.hallucinationRisk = hallucinationRisk == null ? "LOW" : hallucinationRisk;
+        entity.riskFactorsJson = riskFactorsJson == null || riskFactorsJson.isBlank() ? "[]" : riskFactorsJson;
         return entity;
     }
 
@@ -115,5 +148,17 @@ public class AgentTraceEntity extends BaseEntity {
 
     public String getErrorMessage() {
         return errorMessage;
+    }
+
+    public String getSafetyEventsJson() {
+        return safetyEventsJson;
+    }
+
+    public String getHallucinationRisk() {
+        return hallucinationRisk;
+    }
+
+    public String getRiskFactorsJson() {
+        return riskFactorsJson;
     }
 }

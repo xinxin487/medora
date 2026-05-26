@@ -10,20 +10,28 @@ import com.medora.chat.sse.StreamEventPublisher;
 import com.medora.knowledge.service.KnowledgeJsonService;
 import com.medora.knowledge.service.RetrievalResult;
 import com.medora.knowledge.service.RetrievalService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Component
 public class ChatOrchestrator {
 
+    private static final Logger log = LoggerFactory.getLogger(ChatOrchestrator.class);
+
     private final IntentRouter intentRouter;
     private final SafetyGuard safetyGuard;
+    private final OutputSafetyGuard outputSafetyGuard;
+    private final CitationCoverageChecker citationCoverageChecker;
     private final RetrievalService retrievalService;
     private final ToolExecutor toolExecutor;
     private final PromptBuilder promptBuilder;
@@ -35,6 +43,8 @@ public class ChatOrchestrator {
 
     public ChatOrchestrator(IntentRouter intentRouter,
                             SafetyGuard safetyGuard,
+                            OutputSafetyGuard outputSafetyGuard,
+                            CitationCoverageChecker citationCoverageChecker,
                             RetrievalService retrievalService,
                             ToolExecutor toolExecutor,
                             PromptBuilder promptBuilder,
@@ -45,6 +55,8 @@ public class ChatOrchestrator {
                             MemoryService memoryService) {
         this.intentRouter = intentRouter;
         this.safetyGuard = safetyGuard;
+        this.outputSafetyGuard = outputSafetyGuard;
+        this.citationCoverageChecker = citationCoverageChecker;
         this.retrievalService = retrievalService;
         this.toolExecutor = toolExecutor;
         this.promptBuilder = promptBuilder;
@@ -56,7 +68,13 @@ public class ChatOrchestrator {
     }
 
     public AgentRunResult handle(AgentChatCommand command, SseEmitter emitter) throws IOException {
-        safetyGuard.preCheck(command.message());
+        SafetyGuard.CheckResult safetyCheck = safetyGuard.preCheck(command.message());
+        if (!safetyCheck.allowed()) {
+            throw new com.medora.common.exception.BusinessException(
+                    safetyCheck.code(),
+                    org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+                    safetyCheck.message());
+        }
         IntentDecision localIntent = intentRouter.route(command.message());
         IntentDecision intent = shouldPreferLocalIntent(localIntent)
                 ? localIntent
@@ -84,7 +102,8 @@ public class ChatOrchestrator {
 
         List<ToolExecutionResult> toolResults = List.of();
         if (intent.needTool()) {
-            List<IntentDecision.ToolInvocation> executableTools = executableTools(intent);
+            List<IntentDecision.ToolInvocation> executableTools = filterUserProvidedParams(
+                    filterHighRiskFrequency(executableTools(intent)));
             for (IntentDecision.ToolInvocation invocation : executableTools) {
                 streamEventPublisher.publishToolStatus(emitter, invocation.toolName(), "STARTED", "正在执行工具");
             }
@@ -121,15 +140,57 @@ public class ChatOrchestrator {
                 streamEventPublisher.publishDelta(emitter, delta);
             }
         }
+
+        // 输出层安全校验
+        String safetyFilteredReply = applyOutputSafety(reply, retrievalResults, intent);
+        if (!safetyFilteredReply.equals(reply)) {
+            // 如果回复被修改，推送追加的免责内容
+            String appended = safetyFilteredReply.substring(reply.length());
+            if (!appended.isEmpty()) {
+                for (String delta : splitDeltas(appended)) {
+                    streamEventPublisher.publishDelta(emitter, delta);
+                }
+            }
+        }
+        reply = safetyFilteredReply;
+
+        // 标记检索结果中哪些被回复实际引用
+        String citationJsonWithRefs = toCitationJsonWithReferences(retrievalResults, reply);
+
         return new AgentRunResult(
                 intent,
                 reply,
                 retrievalResults,
                 toolResults,
-                toCitationJson(retrievalResults),
+                citationJsonWithRefs,
                 toToolJson(intent, toolResults),
-                promptPackage.tokenUsageJson()
+                promptPackage.tokenUsageJson(),
+                "[]",
+                hallucinationRisk(retrievalResults, toolResults, reply),
+                "[]"
         );
+    }
+
+    private String toCitationJsonWithReferences(List<RetrievalResult> retrievalResults, String reply) {
+        if (retrievalResults == null || retrievalResults.isEmpty()) {
+            return "[]";
+        }
+        String lowerReply = reply == null ? "" : reply.toLowerCase();
+        return knowledgeJsonService.toJson(retrievalResults.stream()
+                .map(result -> {
+                    boolean referenced = lowerReply.contains(result.snippet().toLowerCase().substring(
+                            0, Math.min(20, result.snippet().length())))
+                            || lowerReply.contains(result.title().toLowerCase());
+                    return Map.of(
+                            "sourceId", result.documentId(),
+                            "chunkId", result.chunkId(),
+                            "title", result.title(),
+                            "snippet", result.snippet(),
+                            "score", result.score(),
+                            "referenced", referenced
+                    );
+                })
+                .toList());
     }
 
     private String toCitationJson(List<RetrievalResult> retrievalResults) {
@@ -182,6 +243,108 @@ public class ChatOrchestrator {
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
+    }
+
+    private List<IntentDecision.ToolInvocation> filterUserProvidedParams(List<IntentDecision.ToolInvocation> tools) {
+        return tools.stream()
+                .filter(invocation -> {
+                    boolean isHighRisk = ToolNames.BOOK_APPOINTMENT.equals(invocation.toolName())
+                            || ToolNames.CANCEL_APPOINTMENT.equals(invocation.toolName());
+                    if (!isHighRisk) {
+                        return true;
+                    }
+                    if (invocation.paramSource() == IntentDecision.ParamSource.MODEL_INFERRED) {
+                        log.warn("High-risk tool {} from inferred params rejected; requires user-provided params",
+                                invocation.toolName());
+                        return false;
+                    }
+                    return true;
+                })
+                .toList();
+    }
+
+    private List<IntentDecision.ToolInvocation> filterHighRiskFrequency(List<IntentDecision.ToolInvocation> tools) {
+        Set<String> seenHighRisk = new HashSet<>();
+        return tools.stream()
+                .filter(invocation -> {
+                    boolean isHighRisk = ToolNames.BOOK_APPOINTMENT.equals(invocation.toolName())
+                            || ToolNames.CANCEL_APPOINTMENT.equals(invocation.toolName());
+                    if (!isHighRisk) {
+                        return true;
+                    }
+                    if (seenHighRisk.contains(invocation.toolName())) {
+                        log.warn("High-risk tool {} called more than once in single turn; skipping duplicate", invocation.toolName());
+                        return false;
+                    }
+                    seenHighRisk.add(invocation.toolName());
+                    return true;
+                })
+                .toList();
+    }
+
+    private String hallucinationRisk(List<RetrievalResult> retrievalResults,
+                                     List<ToolExecutionResult> toolResults,
+                                     String reply) {
+        boolean hasRetrieval = retrievalResults != null && !retrievalResults.isEmpty();
+        boolean hasToolResults = toolResults != null && !toolResults.isEmpty();
+        boolean hasLongReply = reply != null && reply.length() > 100;
+
+        if (hasLongReply && !hasRetrieval && !hasToolResults) {
+            return "HIGH";
+        }
+        if (hasToolResults && !hasRetrieval && hasLongReply) {
+            return "MEDIUM";
+        }
+        if (hasRetrieval && !citationCoverageChecker.check(reply, retrievalResults).covered()) {
+            return "MEDIUM";
+        }
+        return "LOW";
+    }
+
+    private String applyOutputSafety(String reply, List<RetrievalResult> retrievalResults, IntentDecision intent) {
+        if (reply == null || reply.isBlank()) {
+            return reply;
+        }
+
+        // 引用覆盖校验
+        CitationCoverageChecker.CoverageResult coverageResult = citationCoverageChecker.check(reply, retrievalResults);
+        if (!coverageResult.covered()) {
+            log.warn("Citation coverage check failed. findings={}", coverageResult.findings());
+        }
+
+        // 输出安全校验
+        OutputSafetyGuard.CheckResult outputCheck = outputSafetyGuard.check(reply);
+        switch (outputCheck.action()) {
+            case APPEND_DISCLAIMER -> {
+                String disclaimer = "\n\n⚠️ 以上建议仅供参考，不构成医疗诊断。如有不适请及时就医，以医生面诊结果为准。";
+                if (!reply.contains(disclaimer)) {
+                    return reply + disclaimer;
+                }
+            }
+            case REPLACE_REPLY -> {
+                return "抱歉，我无法对这个问题提供回答。请咨询医院导诊台或前台工作人员获取准确信息。";
+            }
+            case NONE -> {
+                // 无操作
+            }
+        }
+
+        // 医疗相关意图时追加免责声明
+        if (intent != null && intent.intentType() != null) {
+            String it = intent.intentType();
+            boolean isMedicalIntent = it.contains("QUERY_DEPARTMENTS") || it.contains("MEDICAL")
+                    || it.contains("KNOWLEDGE_QA") || it.contains("GENERAL_CHAT");
+            boolean involvesMedicalTerm = reply.contains("症状") || reply.contains("咳嗽")
+                    || reply.contains("发烧") || reply.contains("疼痛") || reply.contains("不舒服");
+            if (isMedicalIntent && involvesMedicalTerm) {
+                String medicalDisclaimer = "\n\n⚠️ 以上建议仅供参考，不构成医疗诊断。如有不适请及时就医，以医生面诊结果为准。";
+                if (!reply.contains(medicalDisclaimer)) {
+                    return reply + medicalDisclaimer;
+                }
+            }
+        }
+
+        return reply;
     }
 
     private List<String> splitDeltas(String reply) {

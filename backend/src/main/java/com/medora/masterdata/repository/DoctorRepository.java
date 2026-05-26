@@ -17,7 +17,7 @@ public interface DoctorRepository extends JpaRepository<DoctorEntity, Long> {
             from DoctorEntity d
             where (:departmentPublicId is null or d.department.publicId = :departmentPublicId)
               and (:status is null or d.status = :status)
-              and (:keyword is null or lower(d.name) like lower(concat('%', :keyword, '%')))
+              and (:keyword is null or lower(d.name) like lower(concat('%', cast(:keyword as string), '%')))
             """)
     Page<DoctorEntity> search(@Param("departmentPublicId") UUID departmentPublicId,
                               @Param("status") String status,
