@@ -32,9 +32,6 @@ export function AdminShell({ title, description, children, actions }: AdminShell
                 <Link href="/" className="text-sm font-semibold text-emerald-700">
                   Medora
                 </Link>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
-                  Phase 8
-                </span>
               </div>
               <h1 className="mt-3 text-2xl font-semibold sm:text-3xl">{title}</h1>
               <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">

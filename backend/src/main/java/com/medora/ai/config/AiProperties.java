@@ -19,6 +19,7 @@ public class AiProperties {
     private int chunkTargetSize = 700;
     private int chunkOverlapSize = 120;
     private boolean insecureTls = false;
+    private int contextCacheTtlSeconds = 3600;
 
     public int getChunkTargetSize() {
         return chunkTargetSize;
@@ -114,5 +115,13 @@ public class AiProperties {
 
     public void setInsecureTls(boolean insecureTls) {
         this.insecureTls = insecureTls;
+    }
+
+    public int getContextCacheTtlSeconds() {
+        return contextCacheTtlSeconds;
+    }
+
+    public void setContextCacheTtlSeconds(int contextCacheTtlSeconds) {
+        this.contextCacheTtlSeconds = contextCacheTtlSeconds;
     }
 }

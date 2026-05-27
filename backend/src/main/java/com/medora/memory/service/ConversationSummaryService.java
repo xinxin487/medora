@@ -8,6 +8,7 @@ import com.medora.agent.tool.ToolNames;
 import com.medora.appointment.api.response.AppointmentCancelResponse;
 import com.medora.appointment.api.response.AppointmentItem;
 import com.medora.appointment.api.response.AppointmentResponse;
+import com.medora.chat.cache.RedisContextCacheService;
 import com.medora.chat.domain.ChatMessageEntity;
 import com.medora.chat.domain.ConversationEntity;
 import com.medora.chat.repository.ChatMessageRepository;
@@ -29,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class ConversationSummaryService {
@@ -38,17 +40,20 @@ public class ConversationSummaryService {
     private final ConversationSummaryRepository conversationSummaryRepository;
     private final KnowledgeJsonService knowledgeJsonService;
     private final ObjectMapper objectMapper;
+    private final RedisContextCacheService redisContextCacheService;
 
     public ConversationSummaryService(ConversationRepository conversationRepository,
                                       ChatMessageRepository chatMessageRepository,
                                       ConversationSummaryRepository conversationSummaryRepository,
                                       KnowledgeJsonService knowledgeJsonService,
-                                      ObjectMapper objectMapper) {
+                                      ObjectMapper objectMapper,
+                                      RedisContextCacheService redisContextCacheService) {
         this.conversationRepository = conversationRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.conversationSummaryRepository = conversationSummaryRepository;
         this.knowledgeJsonService = knowledgeJsonService;
         this.objectMapper = objectMapper;
+        this.redisContextCacheService = redisContextCacheService;
     }
 
     @Transactional(readOnly = true)
@@ -272,6 +277,14 @@ public class ConversationSummaryService {
     }
 
     private List<RecentMessage> loadRecentMessages(ConversationEntity conversation) {
+        UUID conversationPublicId = conversation.getPublicId();
+        if (conversationPublicId != null) {
+            String publicId = conversationPublicId.toString();
+            List<RecentMessage> cached = redisContextCacheService.getRecentMessages(publicId);
+            if (cached != null && !cached.isEmpty()) {
+                return cached;
+            }
+        }
         List<ChatMessageEntity> rows = chatMessageRepository.findTop12ByConversationOrderByCreatedAtDescIdDesc(conversation);
         List<RecentMessage> messages = new ArrayList<>();
         for (int index = rows.size() - 1; index >= 0; index--) {
@@ -279,7 +292,8 @@ public class ConversationSummaryService {
             if (!StringUtils.hasText(row.getContent())) {
                 continue;
             }
-            messages.add(new RecentMessage(row.getRole(), truncate(row.getContent(), 280)));
+            RecentMessage msg = new RecentMessage(row.getRole(), truncate(row.getContent(), 280));
+            messages.add(msg);
         }
         return messages;
     }

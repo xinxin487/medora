@@ -130,8 +130,8 @@ export default function AdminTracePage() {
               onChange={(e) => setStatus(e.target.value)}
             >
               <option value="">全部状态</option>
-              <option value="SUCCESS">SUCCESS</option>
-              <option value="FAILED">FAILED</option>
+              <option value="SUCCESS">成功</option>
+              <option value="FAILED">失败</option>
             </select>
             <button
               className="w-full rounded-full border border-[var(--line-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--ink-body)] disabled:opacity-60"

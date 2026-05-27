@@ -8,6 +8,7 @@ import com.medora.auth.domain.UserAccountEntity;
 import com.medora.auth.repository.UserAccountRepository;
 import com.medora.auth.security.AuthenticatedUser;
 import com.medora.auth.security.CurrentAuthenticatedUserProvider;
+import com.medora.chat.cache.RedisContextCacheService;
 import com.medora.chat.api.request.ChatStreamRequest;
 import com.medora.chat.domain.ChatMessageEntity;
 import com.medora.chat.domain.ConversationEntity;
@@ -43,6 +44,7 @@ public class ChatRuntimeService {
     private final AgentTraceService agentTraceService;
     private final ConversationSummaryService conversationSummaryService;
     private final MemoryService memoryService;
+    private final RedisContextCacheService redisContextCacheService;
 
     public ChatRuntimeService(CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider,
                               UserAccountRepository userAccountRepository,
@@ -54,7 +56,8 @@ public class ChatRuntimeService {
                               ChatOrchestrator chatOrchestrator,
                               AgentTraceService agentTraceService,
                               ConversationSummaryService conversationSummaryService,
-                              MemoryService memoryService) {
+                              MemoryService memoryService,
+                              RedisContextCacheService redisContextCacheService) {
         this.currentAuthenticatedUserProvider = currentAuthenticatedUserProvider;
         this.userAccountRepository = userAccountRepository;
         this.conversationRepository = conversationRepository;
@@ -66,6 +69,7 @@ public class ChatRuntimeService {
         this.agentTraceService = agentTraceService;
         this.conversationSummaryService = conversationSummaryService;
         this.memoryService = memoryService;
+        this.redisContextCacheService = redisContextCacheService;
     }
 
     public SseEmitter stream(String conversationId, ChatStreamRequest request) {
@@ -155,7 +159,8 @@ public class ChatRuntimeService {
                     conversation.getPublicId().toString(),
                     assistantMessage.getId(),
                     assistantMessage.getPublicId().toString(),
-                    "trace_" + UUID.randomUUID().toString().replace("-", "")
+                    "trace_" + UUID.randomUUID().toString().replace("-", ""),
+                    request.message()
             );
         });
     }
@@ -167,7 +172,7 @@ public class ChatRuntimeService {
                                           String reply,
                                           AgentRunResult agentRunResult,
                                           long latencyMs) {
-        transactionTemplate.executeWithoutResult(status -> {
+        String conversationPublicId = transactionTemplate.execute(status -> {
             ChatMessageEntity assistantMessage = chatMessageRepository.findById(assistantMessageId)
                     .orElseThrow(() -> new BusinessException("CHAT_MESSAGE_NOT_FOUND", HttpStatus.NOT_FOUND,
                             "assistant message not found"));
@@ -198,11 +203,16 @@ public class ChatRuntimeService {
             ));
             conversationSummaryService.refreshAfterAssistantReply(conversation, userMessage, reply, agentRunResult);
             memoryService.captureFromAgentRun(conversation.getUserAccount(), userMessage, agentRunResult);
+            return conversation.getPublicId().toString();
         });
+        if (conversationPublicId != null) {
+            redisContextCacheService.pushMessage(conversationPublicId, "USER", userMessage);
+            redisContextCacheService.pushMessage(conversationPublicId, "ASSISTANT", reply);
+        }
     }
 
     private void completeAssistantFailure(StreamSession session, Exception ex, long latencyMs) {
-        transactionTemplate.executeWithoutResult(status -> {
+        String conversationPublicId = transactionTemplate.execute(status -> {
             ChatMessageEntity assistantMessage = chatMessageRepository.findById(session.assistantMessageId())
                     .orElseThrow(() -> new BusinessException("CHAT_MESSAGE_NOT_FOUND", HttpStatus.NOT_FOUND,
                             "assistant message not found"));
@@ -240,7 +250,14 @@ public class ChatRuntimeService {
                     "LOW",
                     "[]"
             ));
+            return conversation.getPublicId().toString();
         });
+        if (conversationPublicId != null && ex instanceof BusinessException be
+                && "AGENT_SAFETY_REJECTED".equals(be.getCode())) {
+            redisContextCacheService.pushMessage(conversationPublicId, "USER", session.userMessage());
+            redisContextCacheService.pushMessage(conversationPublicId, "ASSISTANT",
+                    "抱歉，你的消息已被安全策略拦截。请调整后重新提问。");
+        }
     }
 
     private UserAccountEntity getCurrentUserAccount() {
@@ -286,7 +303,8 @@ public class ChatRuntimeService {
             String conversationPublicId,
             Long assistantMessageId,
             String assistantMessagePublicId,
-            String traceId
+            String traceId,
+            String userMessage
     ) {
     }
 }

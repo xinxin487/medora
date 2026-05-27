@@ -51,7 +51,7 @@ export default function AdminSafetyPage() {
         setStatus("error");
       }
     } catch {
-      setError("无法连接后端，请确认后端服务已启动。");
+      setError("无法连接服务，请稍后重试。");
       setStatus("error");
     }
   }

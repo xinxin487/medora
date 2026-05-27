@@ -177,7 +177,7 @@ export default function AdminConversationsPage() {
               onChange={(e) => setStatus(e.target.value)}
             >
               <option value="">全部状态</option>
-              <option value="ACTIVE">ACTIVE</option>
+              <option value="ACTIVE">进行中</option>
             </select>
             <button
               className="w-full rounded-full border border-[var(--line-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--ink-body)] disabled:opacity-60"

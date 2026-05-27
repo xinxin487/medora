@@ -72,7 +72,7 @@ export default function KnowledgeAdminPage() {
         "/admin/knowledge/documents/upload",
         { method: "POST", body: formData },
       );
-      setMessage(`已上传并切片：${uploaded.title}，${uploaded.chunkCount} 个切片。`);
+      setMessage(`已上传：${uploaded.title}，共 ${uploaded.chunkCount} 个片段。`);
       await loadDocuments();
     });
   }
@@ -110,7 +110,7 @@ export default function KnowledgeAdminPage() {
         { method: "POST", body: JSON.stringify({ query, bizScope, topK: 5 }) },
       );
       setResults(response.items);
-      setMessage(`检索完成：${response.items.length} 条命中。`);
+      setMessage(`检索完成：${response.items.length} 条结果。`);
     });
   }
 

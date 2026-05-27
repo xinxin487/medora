@@ -83,10 +83,10 @@ export default function AdminAuditLogsPage() {
               onChange={(e) => setOperatorType(e.target.value)}
             >
               <option value="">全部操作人</option>
-              <option value="ADMIN">ADMIN</option>
-              <option value="USER">USER</option>
-              <option value="AGENT">AGENT</option>
-              <option value="SYSTEM">SYSTEM</option>
+              <option value="ADMIN">管理员</option>
+              <option value="USER">用户</option>
+              <option value="AGENT">智能体</option>
+              <option value="SYSTEM">系统</option>
             </select>
             <input
               className="w-full rounded-[1.1rem] border border-[var(--line-soft)] bg-white/80 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--accent-main)]"

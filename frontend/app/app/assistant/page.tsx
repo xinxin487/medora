@@ -88,7 +88,7 @@ export default function AssistantPage() {
       setConversations((cur) => [conv, ...cur]);
       startTransition(() => setActiveConversationId(conv.conversationId));
       setMessages([]);
-      setStatus("已创建新会话，可以继续问诊或预约。");
+      setStatus("新会话已就绪，可以开始问诊。");
     }, false);
   }
 
@@ -109,7 +109,7 @@ export default function AssistantPage() {
         `/chat/conversations/${conversationId}/messages?pageSize=100`,
       );
       setMessages(result.list);
-      setStatus(`已载入 ${result.list.length} 条消息。`);
+      setStatus("会话记录已加载。");
     }, false);
   }
 
@@ -175,7 +175,7 @@ export default function AssistantPage() {
             );
           }
           if (streamEvent.event === "message_end") {
-            setStatus("回复已完成。");
+            setStatus("回复完成，可以继续提问。");
           }
           if (streamEvent.event === "citation") {
             setMessages((cur) =>

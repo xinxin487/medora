@@ -7,6 +7,7 @@ import com.medora.agent.application.RouteMode;
 import com.medora.agent.tool.ToolExecutionResult;
 import com.medora.agent.tool.ToolNames;
 import com.medora.auth.domain.UserAccountEntity;
+import com.medora.chat.cache.RedisContextCacheService;
 import com.medora.chat.domain.ChatMessageEntity;
 import com.medora.chat.domain.ConversationEntity;
 import com.medora.chat.repository.ChatMessageRepository;
@@ -21,6 +22,7 @@ import org.mockito.ArgumentCaptor;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -39,7 +41,8 @@ class ConversationSummaryServiceTest {
                 chatMessageRepository,
                 conversationSummaryRepository,
                 new KnowledgeJsonService(new ObjectMapper()),
-                new ObjectMapper()
+                new ObjectMapper(),
+                mock(RedisContextCacheService.class)
         );
         ConversationEntity conversation = ConversationEntity.create(new UserAccountEntity(), "导诊咨询", "GENERAL");
         ChatMessageEntity userMessage = ChatMessageEntity.userText(conversation, "帮我查明天下午呼吸内科号源", null);

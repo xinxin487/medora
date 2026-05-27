@@ -42,7 +42,7 @@ export default function AdminOverviewPage() {
     traces: 0,
     auditLogs: 0,
   });
-  const [status, setStatus] = useState("正在加载后台概览。");
+  const [status, setStatus] = useState("正在加载概览数据。");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function AdminOverviewPage() {
 
   async function loadOverview() {
     setError(null);
-    setStatus("正在读取会话、Trace、审计和知识库总量。");
+    setStatus("正在读取统计数据。");
     try {
       const [documents, conversations, traces, auditLogs] = await Promise.all([
         apiFetch<PageResponse<unknown>>("/admin/knowledge/documents?pageSize=1"),
@@ -65,7 +65,7 @@ export default function AdminOverviewPage() {
         traces: traces.total,
         auditLogs: auditLogs.total,
       });
-      setStatus("后台概览已更新。");
+      setStatus("概览数据已更新。");
     } catch (cause) {
       if (cause instanceof Error) {
         setError(cause.message);

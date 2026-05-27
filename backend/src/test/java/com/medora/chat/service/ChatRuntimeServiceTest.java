@@ -4,6 +4,7 @@ import com.medora.agent.application.ChatOrchestrator;
 import com.medora.agent.trace.AgentTraceService;
 import com.medora.auth.repository.UserAccountRepository;
 import com.medora.auth.security.CurrentAuthenticatedUserProvider;
+import com.medora.chat.cache.RedisContextCacheService;
 import com.medora.chat.repository.ChatMessageRepository;
 import com.medora.chat.repository.ConversationRepository;
 import com.medora.chat.sse.StreamEventPublisher;
@@ -31,7 +32,8 @@ class ChatRuntimeServiceTest {
                 mock(ChatOrchestrator.class),
                 mock(AgentTraceService.class),
                 mock(ConversationSummaryService.class),
-                mock(MemoryService.class)
+                mock(MemoryService.class),
+                mock(RedisContextCacheService.class)
         );
 
         String reply = service.buildStubAssistantReply("我最近咳嗽，应该挂哪个科？");

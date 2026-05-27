@@ -109,7 +109,7 @@ export function PatientShell({
         <footer className="mt-10 border-t border-[rgba(20,42,39,0.08)] px-1 py-6 text-sm text-[var(--ink-subtle)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p>Medora 将预约服务、导诊助手和会话连续性整合在同一条用户路径中。</p>
-            <p>Built for real API workflows, not demo placeholders.</p>
+            <p>智能医疗服务平台 · 让就诊更高效</p>
           </div>
         </footer>
       </div>

@@ -17,9 +17,9 @@ const serviceHighlights = [
 ];
 
 const trustSignals = [
-  "真实预约与取消接口已经接通，不是静态样例。",
-  "导诊助手支持 SSE 流式回复、引用片段和工具状态反馈。",
-  "后台可查看会话摘要、Agent Trace、审计日志和 Prometheus 指标。",
+  "从科室筛选到完成预约，全程可追溯、可取消。",
+  "导诊助手实时引用医疗知识库，回答有据可查。",
+  "后台集中管理知识库、会话记录与操作审计。",
 ];
 
 export default function HomePage() {
@@ -126,8 +126,8 @@ export default function HomePage() {
             一个真正有用的医疗服务前端，不应该让用户在“问”和“做”之间来回跳。
           </h2>
           <p className="mt-5 text-base leading-8 text-[var(--ink-body)]">
-            Medora 的正式用户端会把咨询、筛选、预约、回看会话这些动作串在一起。
-            用户看到的不是 Phase 文案、接口按钮和调试状态，而是一条完整的服务旅程。
+            Medora 把咨询、筛选、预约、回看会话整合在同一条路径中，
+            让用户从"不确定该挂什么科"到"已完成预约"之间，不再需要在不同页面间来回跳转。
           </p>
         </div>
 
