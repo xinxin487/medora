@@ -28,6 +28,14 @@ spring:
           max-idle: ${REDIS_POOL_IDLE:8}
           min-idle: ${REDIS_POOL_MIN:2}
 
+springdoc:
+  api-docs:
+    path: /api/v1/openapi/docs
+  swagger-ui:
+    path: /api/v1/openapi/ui
+    tags-sorter: alpha
+    operations-sorter: method
+
 server:
   port: ${BACKEND_PORT:8080}
 
@@ -49,6 +57,14 @@ logging:
 
 medora:
   phase: phase-8
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:*,http://127.0.0.1:*}
+  rag:
+    default-top-k: ${RAG_DEFAULT_TOP_K:5}
+    max-top-k: ${RAG_MAX_TOP_K:10}
+    min-score-threshold: ${RAG_MIN_SCORE_THRESHOLD:0.15}
+    keyword-weight: ${RAG_KEYWORD_WEIGHT:0.55}
+    vector-weight: ${RAG_VECTOR_WEIGHT:0.45}
   ai:
     provider: ${AI_PROVIDER:local-hash}
     chat-provider: ${AI_CHAT_PROVIDER:local}

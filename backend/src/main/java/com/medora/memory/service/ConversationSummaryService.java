@@ -2,6 +2,7 @@ package com.medora.memory.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medora.agent.application.AgentModelGateway;
 import com.medora.agent.application.AgentRunResult;
 import com.medora.agent.tool.ToolExecutionResult;
 import com.medora.agent.tool.ToolNames;
@@ -41,19 +42,22 @@ public class ConversationSummaryService {
     private final KnowledgeJsonService knowledgeJsonService;
     private final ObjectMapper objectMapper;
     private final RedisContextCacheService redisContextCacheService;
+    private final AgentModelGateway agentModelGateway;
 
     public ConversationSummaryService(ConversationRepository conversationRepository,
                                       ChatMessageRepository chatMessageRepository,
                                       ConversationSummaryRepository conversationSummaryRepository,
                                       KnowledgeJsonService knowledgeJsonService,
                                       ObjectMapper objectMapper,
-                                      RedisContextCacheService redisContextCacheService) {
+                                      RedisContextCacheService redisContextCacheService,
+                                      AgentModelGateway agentModelGateway) {
         this.conversationRepository = conversationRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.conversationSummaryRepository = conversationSummaryRepository;
         this.knowledgeJsonService = knowledgeJsonService;
         this.objectMapper = objectMapper;
         this.redisContextCacheService = redisContextCacheService;
+        this.agentModelGateway = agentModelGateway;
     }
 
     @Transactional(readOnly = true)
@@ -165,14 +169,13 @@ public class ConversationSummaryService {
         }
     }
 
+    /**
+     * 收集确认事实 — LLM 优先，规则降级。
+     */
     private List<String> collectConfirmedFacts(String userMessage, List<ToolExecutionResult> toolResults) {
         LinkedHashSet<String> facts = new LinkedHashSet<>();
-        if (containsAny(userMessage, "上午", "早上")) {
-            facts.add("用户当前关注上午号源");
-        }
-        if (containsAny(userMessage, "下午", "晚上")) {
-            facts.add("用户当前关注下午号源");
-        }
+
+        // 从工具结果提取事实（确定性高，不需要 LLM）
         for (ToolExecutionResult result : toolResults) {
             if (!result.success()) {
                 continue;
@@ -194,6 +197,36 @@ public class ConversationSummaryService {
                 facts.add("最近取消了预约 " + cancellation.appointmentId());
             }
         }
+
+        // 从用户消息提取关注点 — 使用 LLM 语义理解
+        try {
+            String toolSummary = facts.isEmpty() ? "无" : String.join("；", facts);
+            var llmResult = agentModelGateway.generateConversationSummary(userMessage, toolSummary);
+            if (llmResult.isPresent()) {
+                String content = llmResult.get();
+                // 尝试提取 confirmedFacts 数组
+                int arrayStart = content.indexOf("\"confirmedFacts\"");
+                if (arrayStart >= 0) {
+                    int bracketStart = content.indexOf("[", arrayStart);
+                    int bracketEnd = content.indexOf("]", bracketStart);
+                    if (bracketStart >= 0 && bracketEnd > bracketStart) {
+                        String arrayContent = content.substring(bracketStart, bracketEnd + 1);
+                        List<String> llmFacts = objectMapper.readValue(arrayContent,
+                                new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+                        facts.addAll(llmFacts);
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            // LLM 不可用，回退到关键词
+            if (containsAny(userMessage, "上午", "早上")) {
+                facts.add("用户当前关注上午号源");
+            }
+            if (containsAny(userMessage, "下午", "晚上")) {
+                facts.add("用户当前关注下午号源");
+            }
+        }
+
         return facts.stream().limit(4).toList();
     }
 
@@ -233,6 +266,32 @@ public class ConversationSummaryService {
     private String resolveTopic(String intentType,
                                 List<ToolExecutionResult> toolResults,
                                 String userMessage) {
+        // 尝试 LLM 生成摘要
+        try {
+            String toolSummary = toolResults.stream()
+                    .map(result -> result.success() ? result.summary() : result.errorMessage())
+                    .filter(StringUtils::hasText)
+                    .reduce((a, b) -> a + "; " + b)
+                    .orElse("无工具调用");
+            var llmSummary = agentModelGateway.generateConversationSummary(userMessage, toolSummary);
+            if (llmSummary.isPresent()) {
+                String content = llmSummary.get();
+                // 提取 topic 字段
+                int topicStart = content.indexOf("\"topic\"");
+                if (topicStart >= 0) {
+                    int valueStart = content.indexOf(":", topicStart) + 1;
+                    int quoteStart = content.indexOf("\"", valueStart);
+                    int quoteEnd = content.indexOf("\"", quoteStart + 1);
+                    if (quoteStart >= 0 && quoteEnd > quoteStart) {
+                        return content.substring(quoteStart + 1, quoteEnd);
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            // LLM 不可用，回退到规则
+        }
+
+        // 规则降级
         if (toolResults.stream().anyMatch(result -> ToolNames.BOOK_APPOINTMENT.equals(result.toolName()))) {
             return "预约挂号办理";
         }

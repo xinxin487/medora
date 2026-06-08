@@ -5,10 +5,12 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
 
 class SafetyGuardTest {
 
-    private final SafetyGuard safetyGuard = new SafetyGuard();
+    private final AgentModelGateway gateway = mock(AgentModelGateway.class);
+    private final SafetyGuard safetyGuard = new SafetyGuard(gateway);
 
     @Test
     void shouldAllowNormalMedicalServiceQuestion() {

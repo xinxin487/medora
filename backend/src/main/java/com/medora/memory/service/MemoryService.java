@@ -2,6 +2,7 @@ package com.medora.memory.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medora.agent.application.AgentModelGateway;
 import com.medora.agent.application.AgentRunResult;
 import com.medora.agent.tool.ToolExecutionResult;
 import com.medora.appointment.api.response.AppointmentResponse;
@@ -32,13 +33,16 @@ public class MemoryService {
     private final UserMemoryProfileRepository userMemoryProfileRepository;
     private final KnowledgeJsonService knowledgeJsonService;
     private final ObjectMapper objectMapper;
+    private final AgentModelGateway agentModelGateway;
 
     public MemoryService(UserMemoryProfileRepository userMemoryProfileRepository,
                          KnowledgeJsonService knowledgeJsonService,
-                         ObjectMapper objectMapper) {
+                         ObjectMapper objectMapper,
+                         AgentModelGateway agentModelGateway) {
         this.userMemoryProfileRepository = userMemoryProfileRepository;
         this.knowledgeJsonService = knowledgeJsonService;
         this.objectMapper = objectMapper;
+        this.agentModelGateway = agentModelGateway;
     }
 
     @Transactional(readOnly = true)
@@ -50,7 +54,7 @@ public class MemoryService {
         return userMemoryProfileRepository
                 .findByUserAccountIdAndStatusAndMemoryTypeInOrderByConfidenceDescUpdatedAtDesc(
                         userAccountId,
-                        "ACTIVE",
+                        UserMemoryProfileEntity.STATUS_ACTIVE,
                         memoryTypes
                 )
                 .stream()
@@ -179,65 +183,105 @@ public class MemoryService {
         }
     }
 
+    /**
+     * 从用户消息中提取偏好记忆 — LLM 优先，正则降级。
+     */
     private void captureFromUserMessage(UserAccountEntity userAccount, String userMessage) {
         if (!StringUtils.hasText(userMessage)) {
             return;
         }
-        // 时段偏好 — 扩展模式匹配
+
+        // 优先尝试 LLM 智能提取
+        boolean llmSuccess = tryLlmMemoryExtraction(userAccount, userMessage);
+        if (!llmSuccess) {
+            // LLM 不可用时回退到正则提取
+            fallbackRegexMemoryExtraction(userAccount, userMessage);
+        }
+    }
+
+    /**
+     * LLM 智能记忆提取
+     */
+    private boolean tryLlmMemoryExtraction(UserAccountEntity userAccount, String userMessage) {
+        try {
+            java.util.Optional<String> response = agentModelGateway.extractMemories(userMessage);
+            if (response.isEmpty()) {
+                return false;
+            }
+            String content = response.get().trim();
+            // 提取 JSON 数组
+            int start = content.indexOf('[');
+            int end = content.lastIndexOf(']');
+            if (start < 0 || end <= start) {
+                return content.contains("[]"); // 空数组也是成功
+            }
+            String jsonArray = content.substring(start, end + 1);
+            List<Map<String, Object>> memories = objectMapper.readValue(jsonArray,
+                    new TypeReference<List<Map<String, Object>>>() {});
+            if (memories.isEmpty()) {
+                return true; // 成功但无记忆可提取
+            }
+            for (Map<String, Object> memory : memories) {
+                String memoryType = String.valueOf(memory.getOrDefault("memoryType", ""));
+                String memoryKey = String.valueOf(memory.getOrDefault("memoryKey", ""));
+                String summary = String.valueOf(memory.getOrDefault("summary", ""));
+                double confidence = Double.parseDouble(String.valueOf(memory.getOrDefault("confidence", "0.3")));
+                if (isValidMemoryType(memoryType) && StringUtils.hasText(memoryKey)) {
+                    upsertMemory(
+                            userAccount,
+                            memoryType,
+                            memoryKey,
+                            summary,
+                            Map.of("source", "LLM_EXTRACTED", "rawMessage", userMessage.length() > 100 ? userMessage.substring(0, 100) : userMessage),
+                            confidence,
+                            "LLM_EXTRACTED",
+                            null
+                    );
+                }
+            }
+            return true;
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    /**
+     * 正则降级提取 — LLM 不可用时使用
+     */
+    private void fallbackRegexMemoryExtraction(UserAccountEntity userAccount, String userMessage) {
+        // 时段偏好
         if (containsAny(userMessage, "我习惯上午", "我偏好上午", "优先上午", "尽量上午",
-                "上午的号", "挂上午", "约上午", "上午方便", "上午有空", "上午可以")) {
-            upsertMemory(
-                    userAccount,
-                    MEMORY_TYPE_PREFERRED_PERIOD,
-                    "AM",
-                    "用户明确偏好上午号源",
-                    Map.of("periodCode", "AM", "source", "USER_EXPLICIT"),
-                    0.8,
-                    "USER_EXPLICIT",
-                    null
-            );
+                "上午的号", "挂上午", "约上午", "上午方便", "上午有空", "上午可以", "一般上午")) {
+            upsertMemory(userAccount, MEMORY_TYPE_PREFERRED_PERIOD, "AM",
+                    "用户偏好上午号源", Map.of("periodCode", "AM", "source", "USER_EXPLICIT"),
+                    0.8, "USER_EXPLICIT", null);
         }
         if (containsAny(userMessage, "我习惯下午", "我偏好下午", "优先下午", "尽量下午",
-                "下午的号", "挂下午", "约下午", "下午方便", "下午有空", "下午可以")) {
-            upsertMemory(
-                    userAccount,
-                    MEMORY_TYPE_PREFERRED_PERIOD,
-                    "PM",
-                    "用户明确偏好下午号源",
-                    Map.of("periodCode", "PM", "source", "USER_EXPLICIT"),
-                    0.8,
-                    "USER_EXPLICIT",
-                    null
-            );
+                "下午的号", "挂下午", "约下午", "下午方便", "下午有空", "下午可以", "一般下午")) {
+            upsertMemory(userAccount, MEMORY_TYPE_PREFERRED_PERIOD, "PM",
+                    "用户偏好下午号源", Map.of("periodCode", "PM", "source", "USER_EXPLICIT"),
+                    0.8, "USER_EXPLICIT", null);
         }
-        // 科室提及: 挂<某某科> / 看<某某科>
+        // 科室提及
         String dept = extractDepartmentMention(userMessage);
         if (dept != null) {
-            upsertMemory(
-                    userAccount,
-                    MEMORY_TYPE_PREFERRED_DEPARTMENT,
-                    dept,
-                    "用户提及偏好科室" + dept,
-                    Map.of("departmentName", dept, "source", "USER_MENTION"),
-                    computeConfidence("USER_MENTION"),
-                    "USER_MENTION",
-                    null
-            );
+            upsertMemory(userAccount, MEMORY_TYPE_PREFERRED_DEPARTMENT, dept,
+                    "用户提及偏好科室" + dept, Map.of("departmentName", dept, "source", "USER_MENTION"),
+                    computeConfidence("USER_MENTION"), "USER_MENTION", null);
         }
-        // 医生提及: X医生 / X主任 / X大夫
+        // 医生提及
         String doctor = extractDoctorMention(userMessage);
         if (doctor != null) {
-            upsertMemory(
-                    userAccount,
-                    MEMORY_TYPE_PREFERRED_DOCTOR,
-                    doctor,
-                    "用户提及偏好医生" + doctor,
-                    Map.of("doctorRef", doctor, "source", "USER_MENTION"),
-                    computeConfidence("USER_MENTION"),
-                    "USER_MENTION",
-                    null
-            );
+            upsertMemory(userAccount, MEMORY_TYPE_PREFERRED_DOCTOR, doctor,
+                    "用户提及偏好医生" + doctor, Map.of("doctorRef", doctor, "source", "USER_MENTION"),
+                    computeConfidence("USER_MENTION"), "USER_MENTION", null);
         }
+    }
+
+    private boolean isValidMemoryType(String type) {
+        return MEMORY_TYPE_PREFERRED_DEPARTMENT.equals(type)
+                || MEMORY_TYPE_PREFERRED_DOCTOR.equals(type)
+                || MEMORY_TYPE_PREFERRED_PERIOD.equals(type);
     }
 
     private String extractDepartmentMention(String message) {
@@ -285,20 +329,11 @@ public class MemoryService {
         OffsetDateTime effectiveExpiry = expiresAt != null ? expiresAt : now.plusDays(DEFAULT_MEMORY_TTL_DAYS);
         UserMemoryProfileEntity entity = userMemoryProfileRepository
                 .findByUserAccountAndMemoryTypeAndMemoryKey(userAccount, memoryType, memoryKey)
-                .orElseGet(() -> UserMemoryProfileEntity.create(
-                        userAccount,
-                        memoryType,
-                        memoryKey,
-                        summary,
-                        knowledgeJsonService.toJson(value),
-                        confidence,
-                        source,
-                        now,
-                        effectiveExpiry
-                ));
+                .orElse(null);
+
         // 置信度合并：取已有与新值的较大者；同源多轮重复则递增
         double mergedConfidence = confidence;
-        if (entity.getConfidence() != null) {
+        if (entity != null && entity.getConfidence() != null) {
             double existingConf = entity.getConfidence().doubleValue();
             if (source.equals(entity.getSource()) && existingConf > 0 && existingConf < 0.9) {
                 mergedConfidence = Math.min(0.9, existingConf + 0.1);
@@ -306,7 +341,26 @@ public class MemoryService {
                 mergedConfidence = Math.max(existingConf, confidence);
             }
         }
-        entity.refresh(summary, knowledgeJsonService.toJson(value), mergedConfidence, source, now, effectiveExpiry);
+
+        if (entity == null) {
+            entity = UserMemoryProfileEntity.create(
+                    userAccount, memoryType, memoryKey, summary,
+                    knowledgeJsonService.toJson(value), mergedConfidence, source, now, effectiveExpiry
+            );
+            if (confidence < 0.7) {
+                // 低置信度来源（USER_MENTION/TOOL_QUERY）→ CANDIDATE
+                entity.refreshAsCandidate(summary, knowledgeJsonService.toJson(value),
+                        mergedConfidence, source, now, effectiveExpiry);
+            }
+        } else if (entity.isCandidate()) {
+            // 再次捕获 CANDIDATE 记忆 → 升级为 ACTIVE
+            entity.promoteToActive(now);
+            entity.refresh(summary, knowledgeJsonService.toJson(value),
+                    mergedConfidence, source, now, effectiveExpiry);
+        } else {
+            entity.refresh(summary, knowledgeJsonService.toJson(value),
+                    mergedConfidence, source, now, effectiveExpiry);
+        }
         userMemoryProfileRepository.save(entity);
     }
 
@@ -325,7 +379,7 @@ public class MemoryService {
     public void cleanupExpiredMemories() {
         OffsetDateTime now = OffsetDateTime.now();
         java.util.List<UserMemoryProfileEntity> expired = userMemoryProfileRepository
-                .findByExpiresAtBeforeAndStatus(now, "ACTIVE");
+                .findByExpiresAtBeforeAndStatus(now, UserMemoryProfileEntity.STATUS_ACTIVE);
         for (UserMemoryProfileEntity entity : expired) {
             entity.expire();
         }

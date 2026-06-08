@@ -8,6 +8,7 @@ import com.medora.chat.api.request.CreateConversationRequest;
 import com.medora.chat.domain.ConversationEntity;
 import com.medora.chat.repository.ChatMessageRepository;
 import com.medora.chat.repository.ConversationRepository;
+import com.medora.memory.service.ConversationSummaryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -37,7 +38,8 @@ class ConversationServiceTest {
                 currentAuthenticatedUserProvider,
                 userAccountRepository,
                 conversationRepository,
-                mock(ChatMessageRepository.class)
+                mock(ChatMessageRepository.class),
+                mock(ConversationSummaryService.class)
         );
     }
 

@@ -1,71 +1,123 @@
-# Progress Log
+# Progress Log — Medora LLM 智能化升级
 
-## Session: 2026-05-26
+## Session: 2026-06-08
 
-### Phase 0: 差距分析完成（前置工作）
+### Phase 1: ChatOrchestrator 架构反转 — LLM Planner 优先
 - **Status:** complete
-- **Started:** 2026-05-26
-- Actions taken:
-  - 读取两份设计文档 (03-api-contract-design.md / 04-agent-rag-memory-design.md)
-  - 全量探索 RAG 实现代码（DocumentParser / DocumentChunker / DocumentIngestService / EmbeddingService / RetrievalService / HybridRetriever / KeywordRetriever / VectorRetriever / MemoryService / ConversationSummaryService）
-  - 对比设计与实现，识别 15 项差距
-  - 输出 docs/RAG系统差距分析与优化计划.md
-- Files created/modified:
-  - docs/RAG系统差距分析与优化计划.md (created)
-  - task_plan.md (created)
-  - findings.md (created)
-  - progress.md (created)
+- Actions:
+  - 重构 `ChatOrchestrator.handle()` 意图路由逻辑：LLM Planner 优先
+  - 新增 `resolveIntent()` 方法替代旧的 `shouldPreferLocalIntent()`
+  - 增强 `AgentModelGateway.plannerSystemPrompt()`：新增时间解析规则、症状导诊规则、意图识别规则
+  - 增强 `plannerUserPrompt()`：传入 `dayOfWeek` 帮助计算"下周X"
+- Files modified:
+  - `ChatOrchestrator.java` — 核心路由逻辑反转
+  - `AgentModelGateway.java` — Planner prompt 大幅增强
 
-### Phase RAG-1: 基础加固（已完成）
+### Phase 2: IntentRouter 重构为增强型 fallback
 - **Status:** complete
-- **Started:** 2026-05-26
-- **Completed:** 2026-05-26
-- Actions taken:
-  - G1: MinIO 持久化 — 新增 MinioProperties/MinioConfig/KnowledgeFileStore，V14 迁移
-  - G2: PDF/Office 解析 — 引入 Apache Tika，DocumentParser 新增 PDF/DOCX/XLSX 支持
-  - G4: 异步摄入 — @EnableAsync + AsyncConfig，@Async + TransactionTemplate
-  - G8: RerankService 占位 — 接口 + NoopReranker，注入 HybridRetriever
-- Files created/modified:
-  - backend/pom.xml, *.java (14 files), V14 migration, application.yml
-- **Test results:** 31/31 tests passed, BUILD SUCCESS
+- Actions:
+  - 扩展 `extractDepartmentKeyword()`：新增 13 个症状→科室映射（神经内科、消化内科、皮肤科、眼科、骨科、口腔科、心理科、妇科、耳鼻喉、心血管、泌尿）
+  - 扩展 `parseDate()`：新增"大后天"、"X天后"、"下周X"、"本周X"、"X月X号/日"支持
+  - 扩展 `containsKnowledgeCue()`：新增"费用"、"医保"、"注意"、"准备"等
+  - 扩展 `parsePeriod()`：新增"早上"、"中午"、"晚上"、"傍晚"等
+  - 扩展 `route()` 入口关键词：新增 30+ 个症状/医疗相关关键词
+- Files modified:
+  - `IntentRouter.java` — 全面重写
 
-### Phase RAG-2: 检索与记忆增强（已完成）
+### Phase 3: SafetyGuard + OutputSafetyGuard 双层安全
 - **Status:** complete
-- **Started:** 2026-05-26
-- **Completed:** 2026-05-26
-- Actions taken:
-  - G12: `captureFromUserMessage()` — 时段偏好从 4 模式扩展到 20+ 模式；新增科室/医生提及检测（正则）；新增 `captureScheduleQuerySignal()` 处理号源查询结果
-  - G13: `computeConfidence()` 评分规则引擎（BOOK_APPOINTMENT=1.0, USER_EXPLICIT=0.8, USER_MENTION=0.3, TOOL_QUERY=0.3）；`upsertMemory()` 置信度合并取 max；同源多轮重复 +0.1 递增至上限 0.9
-  - G14: 默认 180 天 TTL；`loadRelevantMemory()` 过期过滤；`@Scheduled` 每日 3 点清理；`expire()` 方法；`findByExpiresAtBeforeAndStatus` 仓库方法
-  - G5: TokenBudgetPlanner 确认已存在并与 PromptBuilder/ContextPruner 完整集成
-- Files created/modified:
-  - backend/src/main/java/com/medora/memory/service/MemoryService.java (modified)
-  - backend/src/main/java/com/medora/memory/domain/UserMemoryProfileEntity.java (modified)
-  - backend/src/main/java/com/medora/memory/service/UserMemoryProfileRepository.java (modified)
-  - backend/src/main/java/com/medora/knowledge/infra/AsyncConfig.java (modified)
-- **Test results:** 31/31 tests passed, BUILD SUCCESS
+- Actions:
+  - `SafetyGuard` 新增 `fullCheck()` 和 `llmSemanticCheck()` — 正则前置 + LLM 语义审查双层
+  - `SafetyGuard` 注入 `AgentModelGateway` 依赖
+  - `OutputSafetyGuard` 新增 `fullCheck()` 和 `llmOutputCheck()` — 检测诊断/用药/系统泄露
+  - `ChatOrchestrator` 改为调用 `safetyGuard.fullCheck()` 和 `outputSafetyGuard.fullCheck()`
+  - `AgentModelGateway` 新增 `lightweightLlmCall()` 通用轻量方法
+- Files modified:
+  - `SafetyGuard.java` — 全面重写
+  - `OutputSafetyGuard.java` — 全面重写
+  - `ChatOrchestrator.java` — 调用方式更新
+  - `AgentModelGateway.java` — 新增方法
+  - `SafetyGuardTest.java` — 适配新构造函数
 
-### Phase RAG-3: 工程优化与测试（待开始）
-- **Status:** pending
+### Phase 4: MemoryService 智能记忆提取
+- **Status:** complete
+- Actions:
+  - `AgentModelGateway` 新增 `extractMemories()` LLM 记忆提取方法
+  - `MemoryService.captureFromUserMessage()` 重构为 LLM 优先 + 正则降级
+  - 新增 `tryLlmMemoryExtraction()` 和 `fallbackRegexMemoryExtraction()`
+  - 新增 `isValidMemoryType()` 校验
+- Files modified:
+  - `AgentModelGateway.java` — 新增 `extractMemories()`
+  - `MemoryService.java` — 核心方法重构
+  - `MemoryServiceTest.java` — 适配新构造函数
 
-### Phase RAG-3: 工程优化与测试（待开始）
-- **Status:** pending
+### Phase 5: 智能幻觉检测 + 医疗免责
+- **Status:** complete
+- Actions:
+  - `AgentModelGateway` 新增 `assessHallucination()` 和 `checkMedicalAdvice()`
+  - `ChatOrchestrator.hallucinationRisk()` 重构为 LLM 评估 + 规则降级
+  - `ChatOrchestrator.applyOutputSafety()` 重构医疗免责为 LLM 语义判断 + 关键词降级
+- Files modified:
+  - `AgentModelGateway.java` — 新增 2 个方法
+  - `ChatOrchestrator.java` — 2 个方法重构
+
+### Phase 6: CitationCoverageChecker 语义覆盖检测
+- **Status:** complete
+- Actions:
+  - 全面重写 `CitationCoverageChecker`：新增 Embedding 语义相似度检测
+  - 新增 `checkSemanticCoverage()` — 使用 `EmbeddingService` 计算余弦相似度
+  - 新增 `cosineSimilarity()` 工具方法
+  - 保留 `checkStringCoverage()` 作为降级
+  - 扩展 `factualIndicators` 数组：新增 6 个指标词
+- Files modified:
+  - `CitationCoverageChecker.java` — 全面重写
+
+### Phase 7: ConversationSummaryService 智能摘要
+- **Status:** complete
+- Actions:
+  - `AgentModelGateway` 新增 `generateConversationSummary()` LLM 摘要方法
+  - `ConversationSummaryService.resolveTopic()` 重构为 LLM 优先 + 规则降级
+  - `ConversationSummaryService.collectConfirmedFacts()` 重构为 LLM 提取 + 关键词降级
+- Files modified:
+  - `AgentModelGateway.java` — 新增方法
+  - `ConversationSummaryService.java` — 2 个方法重构
+  - `ConversationSummaryServiceTest.java` — 适配新构造函数
+
+### Phase 8: DocumentChunker 增强
+- **Status:** complete
+- Actions:
+  - `isFaqContent()` 新增 "问题："、"Q."、"q:" 和数字编号格式支持
+  - `looksLikeHeading()` 新增 "##"/"###" Markdown 层级 + 13 个新标题关键词
+- Files modified:
+  - `DocumentChunker.java`
 
 ## Test Results
-| Test | Input | Expected | Actual | Status |
-|------|-------|----------|--------|--------|
-| (尚未开始实施，测试待执行) | | | | |
+
+| Test | Tests | Failures | Status |
+|------|-------|----------|--------|
+| Phase 1 后 | 33 | 0 | PASS |
+| Phase 2 后 | 33 | 0 | PASS |
+| Phase 3 后 | 33 | 0 | PASS |
+| Phase 4 后 | 33 | 0 | PASS |
+| Phase 5 后 | 33 | 0 | PASS |
+| Phase 6 后 | 33 | 0 | PASS |
+| Phase 7 后 | 33 | 0 | PASS |
+| Phase 8 后 | 33 | 0 | PASS |
 
 ## Error Log
+
 | Timestamp | Error | Attempt | Resolution |
 |-----------|-------|---------|------------|
-| (暂无) | | | |
+| 2026-06-08 | SafetyGuardTest 构造函数不匹配 | 1 | 添加 AgentModelGateway mock 参数 |
+| 2026-06-08 | MemoryServiceTest 构造函数不匹配 | 1 | 添加 AgentModelGateway mock 参数 |
+| 2026-06-08 | ConversationSummaryServiceTest 构造函数不匹配 | 1 | 添加 AgentModelGateway mock + when().thenReturn() |
 
 ## 5-Question Reboot Check
+
 | Question | Answer |
 |----------|--------|
-| Where am I? | 已完成差距分析，等待用户确认启动顺序 |
-| Where am I going? | 3 个 Phase 实施（RAG-1 基础加固 → RAG-2 记忆增强 → RAG-3 工程优化） |
-| What's the goal? | 补齐 15 项差距，使 RAG 系统与设计文档对齐 |
-| What have I learned? | See findings.md |
-| What have I done? | 完成全量差距分析并输出优化计划 |
+| Where am I? | Phase 1-8 全部完成 |
+| Where am I going? | 全部计划已完成 |
+| What's the goal? | 将 10 个硬编码正则/关键词决策点改为 LLM 推理驱动 — 已完成 |
+| What have I learned? | 每个模块都成功实现了 LLM 优先 + 规则降级模式 |
+| What have I done? | 8 个 Phase，修改 10+ 个文件，33 测试全程通过 |

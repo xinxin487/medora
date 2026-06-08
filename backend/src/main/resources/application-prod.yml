@@ -1,0 +1,94 @@
+# ===========================================================
+# Medora 生产环境配置
+# 启动方式: java -jar medora.jar --spring.profiles.active=prod
+# 或: SPRING_PROFILES_ACTIVE=prod
+# ===========================================================
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME:medora}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:20}
+      minimum-idle: ${DB_POOL_MIN:5}
+      idle-timeout: 300000
+      max-lifetime: 1200000
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      timeout: ${REDIS_TIMEOUT:5000}
+      lettuce:
+        pool:
+          max-active: ${REDIS_POOL_MAX:32}
+          max-idle: ${REDIS_POOL_IDLE:16}
+          min-idle: ${REDIS_POOL_MIN:4}
+
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      roles: ADMIN
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    root: WARN
+    com.medora: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} requestId=%X{requestId:-na} - %msg%n"
+
+server:
+  port: ${BACKEND_PORT:8080}
+  forward-headers-strategy: framework
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+medora:
+  phase: production
+  cors:
+    allowed-origins: ${CORS_ORIGINS}
+  rag:
+    default-top-k: ${RAG_DEFAULT_TOP_K:5}
+    max-top-k: ${RAG_MAX_TOP_K:10}
+    min-score-threshold: ${RAG_MIN_SCORE_THRESHOLD:0.15}
+    keyword-weight: ${RAG_KEYWORD_WEIGHT:0.55}
+    vector-weight: ${RAG_VECTOR_WEIGHT:0.45}
+  ai:
+    provider: ${AI_PROVIDER}
+    chat-provider: ${AI_CHAT_PROVIDER}
+    api-key: ${AI_API_KEY}
+    base-url: ${AI_BASE_URL}
+    chat-api-key: ${AI_CHAT_API_KEY}
+    chat-base-url: ${AI_CHAT_BASE_URL}
+    chat-model: ${AI_CHAT_MODEL}
+    embedding-model: ${AI_EMBEDDING_MODEL}
+    embedding-dimensions: ${AI_EMBEDDING_DIMENSIONS:1024}
+    context-cache-ttl-seconds: ${CONTEXT_CACHE_TTL:1800}
+  minio:
+    endpoint: ${MINIO_ENDPOINT}
+    access-key: ${MINIO_ACCESS_KEY}
+    secret-key: ${MINIO_SECRET_KEY}
+    bucket: ${MINIO_BUCKET:medora-docs}
+  auth:
+    jwt:
+      issuer: medora
+      secret: ${JWT_SECRET}
+      access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT30M}
+      refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:P7D}

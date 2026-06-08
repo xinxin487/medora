@@ -73,6 +73,10 @@ public class UserMemoryProfileEntity extends BaseEntity {
         return entity;
     }
 
+    public static final String STATUS_CANDIDATE = "CANDIDATE";
+    public static final String STATUS_ACTIVE = "ACTIVE";
+    public static final String STATUS_INACTIVE = "INACTIVE";
+
     public void refresh(String summary,
                         String valueJson,
                         double confidence,
@@ -83,10 +87,39 @@ public class UserMemoryProfileEntity extends BaseEntity {
         this.valueJson = valueJson == null || valueJson.isBlank() ? "{}" : valueJson;
         this.confidence = BigDecimal.valueOf(confidence).setScale(2, RoundingMode.HALF_UP);
         this.source = source == null ? "UNKNOWN" : source;
-        this.status = "ACTIVE";
+        this.status = STATUS_ACTIVE;
         this.lastConfirmedAt = confirmedAt == null ? OffsetDateTime.now() : confirmedAt;
         this.lastAccessedAt = this.lastConfirmedAt;
         this.expiresAt = expiresAt;
+    }
+
+    public void refreshAsCandidate(String summary,
+                                   String valueJson,
+                                   double confidence,
+                                   String source,
+                                   OffsetDateTime confirmedAt,
+                                   OffsetDateTime expiresAt) {
+        this.summary = summary == null ? "" : summary;
+        this.valueJson = valueJson == null || valueJson.isBlank() ? "{}" : valueJson;
+        this.confidence = BigDecimal.valueOf(confidence).setScale(2, RoundingMode.HALF_UP);
+        this.source = source == null ? "UNKNOWN" : source;
+        this.status = STATUS_CANDIDATE;
+        this.lastConfirmedAt = confirmedAt == null ? OffsetDateTime.now() : confirmedAt;
+        this.lastAccessedAt = this.lastConfirmedAt;
+        this.expiresAt = expiresAt;
+    }
+
+    public boolean isCandidate() {
+        return STATUS_CANDIDATE.equals(this.status);
+    }
+
+    public boolean isActive() {
+        return STATUS_ACTIVE.equals(this.status);
+    }
+
+    public void promoteToActive(OffsetDateTime confirmedAt) {
+        this.status = STATUS_ACTIVE;
+        this.lastConfirmedAt = confirmedAt == null ? OffsetDateTime.now() : confirmedAt;
     }
 
     public void markAccessed(OffsetDateTime accessedAt) {
@@ -94,7 +127,7 @@ public class UserMemoryProfileEntity extends BaseEntity {
     }
 
     public void expire() {
-        this.status = "INACTIVE";
+        this.status = STATUS_INACTIVE;
         this.expiresAt = OffsetDateTime.now();
     }
 

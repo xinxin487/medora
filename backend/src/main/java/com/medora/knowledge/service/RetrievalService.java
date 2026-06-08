@@ -2,6 +2,7 @@ package com.medora.knowledge.service;
 
 import com.medora.knowledge.api.response.KnowledgeSearchItem;
 import com.medora.knowledge.api.response.KnowledgeSearchResponse;
+import com.medora.knowledge.config.RagProperties;
 import com.medora.knowledge.repository.KnowledgeChunkSearchRow;
 import com.medora.knowledge.retriever.HybridRetriever;
 import com.medora.knowledge.retriever.RetrievalResultAssembler;
@@ -17,15 +18,18 @@ public class RetrievalService {
 
     private final HybridRetriever hybridRetriever;
     private final RetrievalResultAssembler retrievalResultAssembler;
+    private final RagProperties ragProperties;
 
     public RetrievalService(HybridRetriever hybridRetriever,
-                            RetrievalResultAssembler retrievalResultAssembler) {
+                            RetrievalResultAssembler retrievalResultAssembler,
+                            RagProperties ragProperties) {
         this.hybridRetriever = hybridRetriever;
         this.retrievalResultAssembler = retrievalResultAssembler;
+        this.ragProperties = ragProperties;
     }
 
     public KnowledgeSearchResponse searchForAdmin(String query, String bizScope, Integer topK) {
-        List<RetrievalResult> results = retrieve(query, bizScope, topK == null ? 5 : topK);
+        List<RetrievalResult> results = retrieve(query, bizScope, topK == null ? ragProperties.getDefaultTopK() : topK);
         return new KnowledgeSearchResponse(
                 query.trim(),
                 results.stream()
@@ -48,7 +52,7 @@ public class RetrievalService {
             return List.of();
         }
         String normalizedQuery = query.trim();
-        int limit = Math.min(Math.max(topK, 1), 10);
+        int limit = Math.min(Math.max(topK, 1), ragProperties.getMaxTopK());
         QueryFeatures queryFeatures = QueryFeatures.from(normalizedQuery);
         return hybridRetriever.retrieve(normalizedQuery, bizScope, limit).stream()
                 .filter(row -> isRelevant(row, queryFeatures))

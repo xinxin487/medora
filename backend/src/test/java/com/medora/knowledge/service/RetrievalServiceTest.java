@@ -1,5 +1,6 @@
 package com.medora.knowledge.service;
 
+import com.medora.knowledge.config.RagProperties;
 import com.medora.knowledge.repository.KnowledgeChunkSearchResult;
 import com.medora.knowledge.retriever.HybridRetriever;
 import com.medora.knowledge.retriever.RetrievalResultAssembler;
@@ -15,10 +16,12 @@ import static org.mockito.Mockito.when;
 
 class RetrievalServiceTest {
 
+    private final RagProperties ragProperties = new RagProperties();
+
     @Test
     void shouldReturnEmptyResultForBlankQuery() {
         RetrievalService service = new RetrievalService(mock(HybridRetriever.class),
-                new RetrievalResultAssembler());
+                new RetrievalResultAssembler(), ragProperties);
 
         assertTrue(service.retrieve(" ", null, 5).isEmpty());
     }
@@ -27,7 +30,7 @@ class RetrievalServiceTest {
     void shouldFilterOutIrrelevantVectorOnlyResult() {
         HybridRetriever hybridRetriever = mock(HybridRetriever.class);
         RetrievalService service = new RetrievalService(hybridRetriever,
-                new RetrievalResultAssembler());
+                new RetrievalResultAssembler(), ragProperties);
         when(hybridRetriever.retrieve("我最近咳嗽，应该挂哪个科？", null, 5))
                 .thenReturn(List.of(cancelAppointmentRow()));
 
@@ -38,7 +41,7 @@ class RetrievalServiceTest {
     void shouldKeepResultWhenQuerySharesChineseKeyTerms() {
         HybridRetriever hybridRetriever = mock(HybridRetriever.class);
         RetrievalService service = new RetrievalService(hybridRetriever,
-                new RetrievalResultAssembler());
+                new RetrievalResultAssembler(), ragProperties);
         when(hybridRetriever.retrieve("取消挂号", null, 5))
                 .thenReturn(List.of(cancelAppointmentRow()));
 

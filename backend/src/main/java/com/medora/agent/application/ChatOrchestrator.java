@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
 public class ChatOrchestrator {
@@ -67,18 +68,21 @@ public class ChatOrchestrator {
         this.memoryService = memoryService;
     }
 
-    public AgentRunResult handle(AgentChatCommand command, SseEmitter emitter) throws IOException {
-        SafetyGuard.CheckResult safetyCheck = safetyGuard.preCheck(command.message());
+    public AgentRunResult handle(AgentChatCommand command, SseEmitter emitter, AtomicBoolean cancelled) throws IOException {
+        if (cancelled.get()) {
+            return abortResult(command);
+        }
+        // 双层安全检查：正则快速前置 + LLM 语义审查
+        SafetyGuard.CheckResult safetyCheck = safetyGuard.fullCheck(command.message());
         if (!safetyCheck.allowed()) {
             throw new com.medora.common.exception.BusinessException(
                     safetyCheck.code(),
                     org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
                     safetyCheck.message());
         }
-        IntentDecision localIntent = intentRouter.route(command.message());
-        IntentDecision intent = shouldPreferLocalIntent(localIntent)
-                ? localIntent
-                : agentModelGateway.planIntent(command.message()).orElse(localIntent);
+        // LLM Planner 优先：让 LLM 做意图规划和参数提取，IntentRouter 降级为 fallback
+        IntentDecision localFallback = intentRouter.route(command.message());
+        IntentDecision intent = resolveIntent(command.message(), localFallback);
         ConversationSummaryService.ConversationContextSnapshot conversationContext =
                 conversationSummaryService.loadContext(command.conversationId());
         List<MemoryService.MemorySnippet> relevantMemories =
@@ -131,24 +135,24 @@ public class ChatOrchestrator {
         );
         Optional<String> streamedReply = agentModelGateway.generateReplyStreaming(
                 promptPackage.modelUserPrompt(),
-                delta -> publishDelta(emitter, delta)
+                delta -> publishDelta(emitter, delta, cancelled)
         );
         String reply = streamedReply.orElse("");
         if (reply.isBlank()) {
             reply = promptPackage.fallbackReply();
             for (String delta : splitDeltas(reply)) {
-                streamEventPublisher.publishDelta(emitter, delta);
+                publishDelta(emitter, delta, cancelled);
             }
         }
 
         // 输出层安全校验
         String safetyFilteredReply = applyOutputSafety(reply, retrievalResults, intent);
-        if (!safetyFilteredReply.equals(reply)) {
-            // 如果回复被修改，推送追加的免责内容
+        if (!safetyFilteredReply.equals(reply) && safetyFilteredReply.length() > reply.length()) {
+            // 回复被追加了内容（如免责声明），推送追加部分
             String appended = safetyFilteredReply.substring(reply.length());
             if (!appended.isEmpty()) {
                 for (String delta : splitDeltas(appended)) {
-                    streamEventPublisher.publishDelta(emitter, delta);
+                    publishDelta(emitter, delta, cancelled);
                 }
             }
         }
@@ -225,19 +229,37 @@ public class ChatOrchestrator {
                 .toList();
     }
 
-    private boolean shouldPreferLocalIntent(IntentDecision localIntent) {
-        return localIntent.toolInvocations().stream()
-                .map(IntentDecision.ToolInvocation::toolName)
-                .anyMatch(toolName -> !ToolNames.SEARCH_KNOWLEDGE.equals(toolName)
-                        && (ToolNames.QUERY_DEPARTMENTS.equals(toolName)
-                        || ToolNames.QUERY_DOCTORS.equals(toolName)
-                        || ToolNames.QUERY_SCHEDULE_SLOTS.equals(toolName)
-                        || ToolNames.BOOK_APPOINTMENT.equals(toolName)
-                        || ToolNames.CANCEL_APPOINTMENT.equals(toolName)
-                        || ToolNames.GET_USER_APPOINTMENTS.equals(toolName)));
+    /**
+     * LLM Planner 优先策略：
+     * 1. 优先调用 LLM Planner 做意图规划和参数提取（语义理解能力强）
+     * 2. LLM 不可用或返回无效结果时，回退到本地 IntentRouter（关键词匹配）
+     * 3. 高风险操作（book/cancel）只接受用户明确提供的参数，拒绝 LLM 推断的 ID
+     */
+    private IntentDecision resolveIntent(String userMessage, IntentDecision localFallback) {
+        Optional<IntentDecision> llmIntent = agentModelGateway.planIntent(userMessage);
+        if (llmIntent.isPresent()) {
+            IntentDecision llm = llmIntent.get();
+            // 高风险工具（book/cancel）要求用户明确提供参数，LLM 推断的 ID 不可信
+            boolean hasHighRiskWithInferredParams = llm.toolInvocations().stream()
+                    .anyMatch(inv -> (ToolNames.BOOK_APPOINTMENT.equals(inv.toolName())
+                            || ToolNames.CANCEL_APPOINTMENT.equals(inv.toolName()))
+                            && inv.paramSource() == IntentDecision.ParamSource.MODEL_INFERRED);
+            if (!hasHighRiskWithInferredParams) {
+                log.info("Using LLM Planner intent: type={}, route={}, tools={}",
+                        llm.intentType(), llm.routeMode(),
+                        llm.toolInvocations().stream().map(IntentDecision.ToolInvocation::toolName).toList());
+                return llm;
+            }
+            log.warn("LLM Planner returned high-risk tool with inferred params, falling back to local intent");
+        }
+        log.info("Using local IntentRouter fallback: type={}, route={}", localFallback.intentType(), localFallback.routeMode());
+        return localFallback;
     }
 
-    private void publishDelta(SseEmitter emitter, String delta) {
+    private void publishDelta(SseEmitter emitter, String delta, AtomicBoolean cancelled) {
+        if (cancelled.get()) {
+            throw new UncheckedIOException(new IOException("stream cancelled"));
+        }
         try {
             streamEventPublisher.publishDelta(emitter, delta);
         } catch (IOException ex) {
@@ -282,13 +304,37 @@ public class ChatOrchestrator {
                 .toList();
     }
 
+    /**
+     * 幻觉风险评估 — LLM 语义评估 + 规则综合评分。
+     * LLM 不可用时回退到规则评分。
+     */
     private String hallucinationRisk(List<RetrievalResult> retrievalResults,
                                      List<ToolExecutionResult> toolResults,
                                      String reply) {
         boolean hasRetrieval = retrievalResults != null && !retrievalResults.isEmpty();
         boolean hasToolResults = toolResults != null && !toolResults.isEmpty();
-        boolean hasLongReply = reply != null && reply.length() > 100;
 
+        // 尝试 LLM 幻觉评估（仅在有检索结果时，避免无意义的 LLM 调用）
+        if (hasRetrieval && reply != null && !reply.isBlank()) {
+            try {
+                String retrievalContext = retrievalResults.stream()
+                        .map(r -> "[" + r.title() + "] " + r.snippet())
+                        .reduce((a, b) -> a + "\n" + b)
+                        .orElse("");
+                var llmAssessment = agentModelGateway.assessHallucination(reply, retrievalContext);
+                if (llmAssessment.isPresent()) {
+                    String content = llmAssessment.get();
+                    if (content.contains("\"HIGH\"")) return "HIGH";
+                    if (content.contains("\"MEDIUM\"")) return "MEDIUM";
+                    if (content.contains("\"LOW\"")) return "LOW";
+                }
+            } catch (Exception ex) {
+                log.debug("LLM hallucination assessment failed, falling back to rules");
+            }
+        }
+
+        // 规则降级评分
+        boolean hasLongReply = reply != null && reply.length() > 100;
         if (hasLongReply && !hasRetrieval && !hasToolResults) {
             return "HIGH";
         }
@@ -312,8 +358,8 @@ public class ChatOrchestrator {
             log.warn("Citation coverage check failed. findings={}", coverageResult.findings());
         }
 
-        // 输出安全校验
-        OutputSafetyGuard.CheckResult outputCheck = outputSafetyGuard.check(reply);
+        // 输出安全校验：正则快速检测 + LLM 语义检测双层
+        OutputSafetyGuard.CheckResult outputCheck = outputSafetyGuard.fullCheck(reply);
         switch (outputCheck.action()) {
             case APPEND_DISCLAIMER -> {
                 String disclaimer = "\n\n⚠️ 以上建议仅供参考，不构成医疗诊断。如有不适请及时就医，以医生面诊结果为准。";
@@ -329,17 +375,26 @@ public class ChatOrchestrator {
             }
         }
 
-        // 医疗相关意图时追加免责声明
-        if (intent != null && intent.intentType() != null) {
-            String it = intent.intentType();
-            boolean isMedicalIntent = it.contains("QUERY_DEPARTMENTS") || it.contains("MEDICAL")
-                    || it.contains("KNOWLEDGE_QA") || it.contains("GENERAL_CHAT");
-            boolean involvesMedicalTerm = reply.contains("症状") || reply.contains("咳嗽")
-                    || reply.contains("发烧") || reply.contains("疼痛") || reply.contains("不舒服");
-            if (isMedicalIntent && involvesMedicalTerm) {
-                String medicalDisclaimer = "\n\n⚠️ 以上建议仅供参考，不构成医疗诊断。如有不适请及时就医，以医生面诊结果为准。";
-                if (!reply.contains(medicalDisclaimer)) {
-                    return reply + medicalDisclaimer;
+        // LLM 语义判断是否需要追加医疗免责声明
+        String disclaimer = "\n\n⚠️ 以上建议仅供参考，不构成医疗诊断。如有不适请及时就医，以医生面诊结果为准。";
+        if (!reply.contains(disclaimer)) {
+            try {
+                var medicalCheck = agentModelGateway.checkMedicalAdvice(reply);
+                if (medicalCheck.isPresent()) {
+                    String content = medicalCheck.get();
+                    if (content.contains("\"hasMedicalAdvice\": true") || content.contains("\"hasMedicalAdvice\":true")) {
+                        log.info("LLM detected medical advice in reply, appending disclaimer");
+                        return reply + disclaimer;
+                    }
+                }
+            } catch (Exception ex) {
+                // LLM 不可用时，使用关键词降级
+                log.debug("LLM medical advice check failed, falling back to keyword check");
+                if (reply.contains("症状") || reply.contains("咳嗽") || reply.contains("发烧")
+                        || reply.contains("疼痛") || reply.contains("不舒服") || reply.contains("头晕")
+                        || reply.contains("恶心") || reply.contains("过敏") || reply.contains("瘙痒")
+                        || reply.contains("出血")) {
+                    return reply + disclaimer;
                 }
             }
         }
@@ -349,5 +404,20 @@ public class ChatOrchestrator {
 
     private List<String> splitDeltas(String reply) {
         return List.of(reply.split("(?<=[。！？；\\n])"));
+    }
+
+    private AgentRunResult abortResult(AgentChatCommand command) {
+        return new AgentRunResult(
+                new IntentDecision("CANCELLED", RouteMode.CHAT_ONLY, false, List.of()),
+                "对话已被取消。",
+                List.of(),
+                List.of(),
+                "[]",
+                "{}",
+                "{\"inputTokens\":0,\"outputTokens\":0}",
+                "[]",
+                "LOW",
+                "[]"
+        );
     }
 }

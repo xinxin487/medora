@@ -8,11 +8,14 @@ import com.medora.chat.api.request.CreateConversationRequest;
 import com.medora.chat.api.response.ChatMessageItem;
 import com.medora.chat.api.response.ConversationItem;
 import com.medora.chat.api.response.ConversationResponse;
+import com.medora.chat.api.response.ConversationSummaryResponse;
 import com.medora.chat.domain.ConversationEntity;
 import com.medora.chat.repository.ChatMessageRepository;
 import com.medora.chat.repository.ConversationRepository;
 import com.medora.common.api.PageResponse;
 import com.medora.common.exception.BusinessException;
+import com.medora.memory.service.ConversationSummaryService;
+import com.medora.memory.service.ConversationSummaryService.ConversationContextSnapshot;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -28,15 +31,18 @@ public class ConversationService {
     private final UserAccountRepository userAccountRepository;
     private final ConversationRepository conversationRepository;
     private final ChatMessageRepository chatMessageRepository;
+    private final ConversationSummaryService conversationSummaryService;
 
     public ConversationService(CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider,
                                UserAccountRepository userAccountRepository,
                                ConversationRepository conversationRepository,
-                               ChatMessageRepository chatMessageRepository) {
+                               ChatMessageRepository chatMessageRepository,
+                               ConversationSummaryService conversationSummaryService) {
         this.currentAuthenticatedUserProvider = currentAuthenticatedUserProvider;
         this.userAccountRepository = userAccountRepository;
         this.conversationRepository = conversationRepository;
         this.chatMessageRepository = chatMessageRepository;
+        this.conversationSummaryService = conversationSummaryService;
     }
 
     @Transactional
@@ -67,6 +73,22 @@ public class ConversationService {
                 .findByConversationOrderByCreatedAtAscIdAsc(conversation, toPageRequest(pageNo, pageSize))
                 .map(ConversationResponseMapper::toMessageItem);
         return PageResponse.from(page);
+    }
+
+    @Transactional(readOnly = true)
+    public ConversationSummaryResponse getSummary(String conversationId) {
+        UserAccountEntity userAccount = getCurrentUserAccount();
+        ConversationEntity conversation = findOwnedConversation(conversationId, userAccount);
+        ConversationContextSnapshot snapshot = conversationSummaryService.loadContext(conversation.getId());
+        return new ConversationSummaryResponse(
+                snapshot.sceneType(),
+                snapshot.summaryText(),
+                snapshot.summaryData(),
+                snapshot.businessState(),
+                snapshot.recentMessages().stream()
+                        .map(m -> new ConversationSummaryResponse.RecentMessageItem(m.role(), m.content()))
+                        .toList()
+        );
     }
 
     private ConversationEntity findOwnedConversation(String conversationId, UserAccountEntity userAccount) {

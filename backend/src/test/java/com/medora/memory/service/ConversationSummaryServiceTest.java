@@ -1,6 +1,7 @@
 package com.medora.memory.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medora.agent.application.AgentModelGateway;
 import com.medora.agent.application.AgentRunResult;
 import com.medora.agent.application.IntentDecision;
 import com.medora.agent.application.RouteMode;
@@ -28,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyString;
 
 class ConversationSummaryServiceTest {
 
@@ -36,13 +38,16 @@ class ConversationSummaryServiceTest {
         ConversationRepository conversationRepository = mock(ConversationRepository.class);
         ChatMessageRepository chatMessageRepository = mock(ChatMessageRepository.class);
         ConversationSummaryRepository conversationSummaryRepository = mock(ConversationSummaryRepository.class);
+        AgentModelGateway gateway = mock(AgentModelGateway.class);
+        when(gateway.generateConversationSummary(anyString(), anyString())).thenReturn(Optional.empty());
         ConversationSummaryService service = new ConversationSummaryService(
                 conversationRepository,
                 chatMessageRepository,
                 conversationSummaryRepository,
                 new KnowledgeJsonService(new ObjectMapper()),
                 new ObjectMapper(),
-                mock(RedisContextCacheService.class)
+                mock(RedisContextCacheService.class),
+                gateway
         );
         ConversationEntity conversation = ConversationEntity.create(new UserAccountEntity(), "导诊咨询", "GENERAL");
         ChatMessageEntity userMessage = ChatMessageEntity.userText(conversation, "帮我查明天下午呼吸内科号源", null);

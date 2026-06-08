@@ -1,5 +1,6 @@
 package com.medora.knowledge.retriever;
 
+import com.medora.knowledge.config.RagProperties;
 import com.medora.knowledge.repository.KnowledgeChunkSearchRow;
 import com.medora.knowledge.repository.KnowledgeChunkSearchResult;
 import org.springframework.stereotype.Component;
@@ -14,23 +15,27 @@ public class HybridRetriever {
     private final KeywordRetriever keywordRetriever;
     private final VectorRetriever vectorRetriever;
     private final RerankService rerankService;
+    private final RagProperties ragProperties;
 
     public HybridRetriever(KeywordRetriever keywordRetriever, VectorRetriever vectorRetriever,
-                           RerankService rerankService) {
+                           RerankService rerankService, RagProperties ragProperties) {
         this.keywordRetriever = keywordRetriever;
         this.vectorRetriever = vectorRetriever;
         this.rerankService = rerankService;
+        this.ragProperties = ragProperties;
     }
 
-    private static final double MIN_SCORE_THRESHOLD = 0.15;
-
     public List<KnowledgeChunkSearchRow> retrieve(String query, String bizScope, int topK) {
+        int candidatePoolSize = Math.max(topK, 8);
+        double kwWeight = ragProperties.getKeywordWeight();
+        double vecWeight = ragProperties.getVectorWeight();
+        double minThreshold = ragProperties.getMinScoreThreshold();
         Map<Long, ScoredRow> merged = new LinkedHashMap<>();
-        merge(merged, keywordRetriever.search(query, bizScope, Math.max(topK, 8)), 0.55);
-        merge(merged, vectorRetriever.search(query, bizScope, Math.max(topK, 8)), 0.45);
+        merge(merged, keywordRetriever.search(query, bizScope, candidatePoolSize), kwWeight);
+        merge(merged, vectorRetriever.search(query, bizScope, candidatePoolSize), vecWeight);
         return rerankService.rerank(query, merged.values().stream()
                 .map(ScoredRow::toSearchRow)
-                .filter(row -> row.getScore() >= MIN_SCORE_THRESHOLD)
+                .filter(row -> row.getScore() >= minThreshold)
                 .sorted((left, right) -> Double.compare(right.getScore(), left.getScore()))
                 .limit(topK)
                 .toList());

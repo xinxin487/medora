@@ -1,6 +1,7 @@
 package com.medora.memory.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medora.agent.application.AgentModelGateway;
 import com.medora.agent.application.AgentRunResult;
 import com.medora.agent.application.IntentDecision;
 import com.medora.agent.application.RouteMode;
@@ -31,10 +32,13 @@ class MemoryServiceTest {
     @Test
     void shouldWriteStableMemoriesWhenAppointmentBookedSuccessfully() {
         UserMemoryProfileRepository repository = mock(UserMemoryProfileRepository.class);
+        AgentModelGateway gateway = mock(AgentModelGateway.class);
+        when(gateway.extractMemories(anyString())).thenReturn(Optional.empty());
         MemoryService service = new MemoryService(
                 repository,
                 new KnowledgeJsonService(new ObjectMapper()),
-                new ObjectMapper()
+                new ObjectMapper(),
+                gateway
         );
         UserAccountEntity userAccount = new UserAccountEntity();
         when(repository.findByUserAccountAndMemoryTypeAndMemoryKey(eq(userAccount), anyString(), anyString()))

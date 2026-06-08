@@ -18,6 +18,7 @@ import com.medora.chat.sse.StreamEventPublisher;
 import com.medora.common.exception.BusinessException;
 import com.medora.memory.service.ConversationSummaryService;
 import com.medora.memory.service.MemoryService;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -28,10 +29,15 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class ChatRuntimeService {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ChatRuntimeService.class);
 
     private final CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider;
     private final UserAccountRepository userAccountRepository;
@@ -45,13 +51,14 @@ public class ChatRuntimeService {
     private final ConversationSummaryService conversationSummaryService;
     private final MemoryService memoryService;
     private final RedisContextCacheService redisContextCacheService;
+    private final Map<String, ActiveStreamHandle> activeStreams = new ConcurrentHashMap<>();
 
     public ChatRuntimeService(CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider,
                               UserAccountRepository userAccountRepository,
                               ConversationRepository conversationRepository,
                               ChatMessageRepository chatMessageRepository,
                               TransactionTemplate transactionTemplate,
-                              TaskExecutor taskExecutor,
+                              @Qualifier("chatStreamExecutor") TaskExecutor taskExecutor,
                               StreamEventPublisher streamEventPublisher,
                               ChatOrchestrator chatOrchestrator,
                               AgentTraceService agentTraceService,
@@ -75,8 +82,23 @@ public class ChatRuntimeService {
     public SseEmitter stream(String conversationId, ChatStreamRequest request) {
         Long userAccountId = getCurrentUserAccount().getId();
         SseEmitter emitter = new SseEmitter(60_000L);
-        taskExecutor.execute(() -> runStream(emitter, userAccountId, conversationId, request));
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+        activeStreams.put(conversationId, new ActiveStreamHandle(emitter, cancelled));
+        emitter.onCompletion(() -> activeStreams.remove(conversationId));
+        emitter.onTimeout(() -> activeStreams.remove(conversationId));
+        emitter.onError(e -> activeStreams.remove(conversationId));
+        taskExecutor.execute(() -> runStream(emitter, userAccountId, conversationId, request, cancelled));
         return emitter;
+    }
+
+    public boolean stopStream(String conversationId) {
+        ActiveStreamHandle handle = activeStreams.remove(conversationId);
+        if (handle == null) {
+            return false;
+        }
+        handle.cancelled.set(true);
+        handle.emitter.complete();
+        return true;
     }
 
     String buildStubAssistantReply(String userMessage) {
@@ -88,7 +110,8 @@ public class ChatRuntimeService {
                 + "”。当前阶段已接入 Agent 编排、知识检索和预约工具，你可以继续查询号源、预约或取消挂号。";
     }
 
-    private void runStream(SseEmitter emitter, Long userAccountId, String conversationId, ChatStreamRequest request) {
+    private void runStream(SseEmitter emitter, Long userAccountId, String conversationId,
+                           ChatStreamRequest request, AtomicBoolean cancelled) {
         StreamSession session = null;
         boolean assistantCompleted = false;
         long startedAt = System.nanoTime();
@@ -109,7 +132,8 @@ public class ChatRuntimeService {
                             session.traceId(),
                             request.message()
                     ),
-                    emitter
+                    emitter,
+                    cancelled
             );
             String reply = agentRunResult.reply();
             completeAssistantMessage(
@@ -272,6 +296,7 @@ public class ChatRuntimeService {
     }
 
     private void publishErrorAndComplete(SseEmitter emitter, Exception ex) {
+        log.error("Chat stream failed", ex);
         try {
             String message = ex instanceof BusinessException ? ex.getMessage() : "chat stream failed";
             streamEventPublisher.publishError(emitter, "CHAT_STREAM_FAILED", message);
@@ -305,6 +330,12 @@ public class ChatRuntimeService {
             String assistantMessagePublicId,
             String traceId,
             String userMessage
+    ) {
+    }
+
+    private record ActiveStreamHandle(
+            SseEmitter emitter,
+            AtomicBoolean cancelled
     ) {
     }
 }
