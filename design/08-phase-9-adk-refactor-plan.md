@@ -110,7 +110,7 @@ ADK `Flowable<Event>` 到现有 SSE 协议的映射:
 
 ## Current Phase
 
-Phase 9.6(跨轮 slot 累积 + 灰度切换)— 待启动。Phase 9.5 已完成,mvn test 148/148 全绿。
+Phase 9.6(跨轮 slot 累积 + 灰度切换)— 已完成灰度切换骨架,mvn test 158/158 全绿(新增 10 个 AdkOrchestrator 单测)。下一步:Phase 9.7 SSE adapter + AgentTrace 接入(需要 UI 实测)。
 
 ## LLM-first 设计原则(贯穿整个 Phase 9)
 
@@ -252,15 +252,21 @@ Phase 9.6(跨轮 slot 累积 + 灰度切换)— 待启动。Phase 9.5 已完成,
 
 ### Phase 9.6: 跨轮 slot 累积 + 灰度切换
 
-- [ ] 9.6.1 在 `BookingAgent` 的 instruction 中显式列出所需 slot(dept / doctor / date / period)和缺失时的反问模板
-- [ ] 9.6.2 在 `MedoraSessionState` 中确认 `pendingBooking` 字段的读写路径,保证跨轮不丢
-- [ ] 9.6.3 在 [ChatOrchestrator.java:71](../backend/src/main/java/com/medora/agent/application/ChatOrchestrator.java#L71) 的 `handle()` 方法入口加分支:`if (adkEnabled && routeMode == ADK) { return adkOrchestrator.handle(...); }`
-- [ ] 9.6.4 新建 `AdkOrchestrator implements 当前 ChatOrchestrator 同接口`,内部调用 `runner.runAsync(...)` 收集结果,产出 `AgentRunResult`
-- [ ] 9.6.5 灰度开关:`medora.adk.enabled=true` 仅对 `IntentType.TRIAGE` 启用,其他意图仍走旧路径
-- [ ] 9.6.6 端到端测试:`mvn test -Dtest='AdkE2ETest'` 跑通三类典型场景(单轮预约、跨轮补全信息后预约、纯知识问答)
-- **Status:** pending
-- **涉及文件:** 修改 `ChatOrchestrator.java`;新建 `AdkOrchestrator.java`;修改配置类加灰度开关
-- **风险:** 跨轮 slot 累积若失败,通常是因为 instruction 没有明确告诉 LLM 「未齐参数时不要调工具」;可通过单测 mock 多轮对话验证
+- [x] 9.6.1 在 `BookingAgent` 的 instruction 中显式列出所需 slot(dept / doctor / date / period)和缺失时的反问模板 — Phase 9.5 已完成,见 [AdkAgentTopology.java](../backend/src/main/java/com/medora/adk/agents/AdkAgentTopology.java) bookingAgent()
+- [x] 9.6.2 `MedoraSessionState` 改为弱类型 `Map<String,Object>` 通过 PostgresBackedSessionService 跨轮持久化,BookingAgent 通过 session state 读取/累积 slot — Phase 9.3 已完成基础设施
+- [x] 9.6.3 在 [ChatOrchestrator.java:71](../backend/src/main/java/com/medora/agent/application/ChatOrchestrator.java#L71) 的 `handle()` 方法入口加分支:`if (adkProperties.isEnabled() && adkOrchestrator.isPresent()) { ... }`
+- [x] 9.6.4 新建 `AdkOrchestrator`(`@Component` + `@ConditionalOnProperty`),内部调用 `runner.runAsync(...)` 同步收集 `Flowable<Event>` 拼接文本,产出最小化 `AgentRunResult`(intentType=ADK_ROUTED, routeMode=ADK 标记)
+- [x] 9.6.5 灰度开关:`medora.adk.enabled=true` 时 ChatOrchestrator 全量委托给 AdkOrchestrator(由 RootRouterAgent 内部分流到 Triage/Booking/Knowledge);关闭时回退旧路径
+- [x] 9.6.6 单元测试 10 个,覆盖:`AdkOrchestratorTest` — 事件文本拼接、首次会话创建注入三 key、session 已存在跳过创建、conversation 不存在 fail-fast、publicId 为 null fail-fast、Runner 异常透传、空事件安全降级、sessionId UUID 校验、用户消息原文透传、appName 固定 "medora"
+- [ ] 9.6.7 端到端集成测试(需要真实 DeepSeek API + Postgres + 知识库):`mvn test -Dtest='AdkE2ETest'` 跑通三类典型场景(单轮预约、跨轮补全信息后预约、纯知识问答) — **推迟到 Phase 9.7 SSE adapter 完成后一起跑,避免重复 mock LLM**
+- **Status:** Phase 9.6 主体完成(灰度骨架 + 单测全绿)。E2E 推迟到 9.7。
+- **涉及文件:** 新建 `AdkOrchestrator.java` + `AdkOrchestratorTest.java`;修改 `ChatOrchestrator.java` 入口分支 + 构造器加 `AdkProperties` + `Optional<AdkOrchestrator>` 依赖
+- **关键决策:**
+  - **sessionId 来源:** `conversation.publicId.toString()` (UUID),不是 Long surrogate id。AdkOrchestrator 通过 ConversationRepository.findById(Long) 解析 publicId,与 PostgresBackedSessionService 的 UUID 解析对齐
+  - **意图过滤范围:** Phase 9.6 采用「全意图委托」而非「仅 TRIAGE」,因为 RootRouterAgent 内部已有 LLM 路由能力,在外层再过滤等于重复决策;若需收窄灰度范围,在 ChatOrchestrator 加 `if intentType == X` 判断即可
+  - **SSE 兼容:** Phase 9.6 把 ADK 同步收集到的整段回复作为单个 delta 推送(走 `splitDeltas` 按标点切分),前端无感知;Phase 9.7 改为 Flowable 订阅逐 token 推送
+  - **AgentRunResult 字段补全:** 当前 intentDecision 用 `ADK_ROUTED` 占位、retrievalResults/toolResults 留空、hallucinationRisk=LOW。Phase 9.7 SSE adapter 完善后,从 ADK Event 提取 FunctionCall/FunctionResponse 反填
+- **风险:** 跨轮 slot 累积若失败,通常是因为 instruction 没有明确告诉 LLM 「未齐参数时不要调工具」;Phase 9.5 instruction 已包含此约束,真实多轮验证推迟到 E2E
 
 ### Phase 9.7: SSE 流式 + AgentTrace 接入
 

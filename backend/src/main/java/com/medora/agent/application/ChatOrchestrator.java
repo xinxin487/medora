@@ -1,5 +1,7 @@
 package com.medora.agent.application;
 
+import com.medora.adk.config.AdkProperties;
+import com.medora.adk.orchestrator.AdkOrchestrator;
 import com.medora.memory.service.ConversationSummaryService;
 import com.medora.memory.service.MemoryService;
 import com.medora.agent.tool.ToolExecutionContext;
@@ -41,6 +43,8 @@ public class ChatOrchestrator {
     private final KnowledgeJsonService knowledgeJsonService;
     private final ConversationSummaryService conversationSummaryService;
     private final MemoryService memoryService;
+    private final AdkProperties adkProperties;
+    private final Optional<AdkOrchestrator> adkOrchestrator;
 
     public ChatOrchestrator(IntentRouter intentRouter,
                             SafetyGuard safetyGuard,
@@ -53,7 +57,9 @@ public class ChatOrchestrator {
                             StreamEventPublisher streamEventPublisher,
                             KnowledgeJsonService knowledgeJsonService,
                             ConversationSummaryService conversationSummaryService,
-                            MemoryService memoryService) {
+                            MemoryService memoryService,
+                            AdkProperties adkProperties,
+                            Optional<AdkOrchestrator> adkOrchestrator) {
         this.intentRouter = intentRouter;
         this.safetyGuard = safetyGuard;
         this.outputSafetyGuard = outputSafetyGuard;
@@ -66,11 +72,27 @@ public class ChatOrchestrator {
         this.knowledgeJsonService = knowledgeJsonService;
         this.conversationSummaryService = conversationSummaryService;
         this.memoryService = memoryService;
+        this.adkProperties = adkProperties;
+        this.adkOrchestrator = adkOrchestrator;
     }
 
     public AgentRunResult handle(AgentChatCommand command, SseEmitter emitter, AtomicBoolean cancelled) throws IOException {
         if (cancelled.get()) {
             return abortResult(command);
+        }
+        // Phase 9.6 灰度接入:ADK 启用时,委托给 AdkOrchestrator 走多 agent 路径
+        // (Phase 9.6 同步收集,9.7 改为 Flowable 订阅 + SSE adapter)
+        if (adkProperties.isEnabled() && adkOrchestrator.isPresent()) {
+            log.info("ADK gray-release enabled, delegating to AdkOrchestrator. conversationId={}, traceId={}",
+                    command.conversationId(), command.traceId());
+            AgentRunResult adkResult = adkOrchestrator.get().orchestrate(command);
+            // Phase 9.6:把 ADK 收集到的整段回复作为单个 delta 推送(9.7 改为逐 token 流式)
+            if (adkResult.reply() != null && !adkResult.reply().isBlank()) {
+                for (String delta : splitDeltas(adkResult.reply())) {
+                    publishDelta(emitter, delta, cancelled);
+                }
+            }
+            return adkResult;
         }
         // 双层安全检查：正则快速前置 + LLM 语义审查
         SafetyGuard.CheckResult safetyCheck = safetyGuard.fullCheck(command.message());
