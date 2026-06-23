@@ -19,6 +19,7 @@ logs/
 # Java / Maven
 backend/target/
 backend/.mvn/
+adk-poc/target/
 
 # Gradle
 backend/.gradle/

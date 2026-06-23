@@ -23,6 +23,19 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of(ex.getCode(), ex.getMessage(), ex.getDetails()));
     }
 
+    @ExceptionHandler(LlmUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleLlmUnavailable(LlmUnavailableException ex) {
+        String requestId = com.medora.common.web.RequestMetadata.currentRequestId();
+        Throwable cause = ex.getCause();
+        log.error("LLM unavailable, requestId={}, operation={}, causeType={}, causeMsg={}",
+                requestId,
+                ex.operation(),
+                cause == null ? "null" : cause.getClass().getName(),
+                cause == null ? "null" : cause.getMessage());
+        return ResponseEntity.status(ex.getHttpStatus())
+                .body(ApiErrorResponse.of(ex.getCode(), ex.getMessage(), ex.getDetails()));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiErrorResponse> handleIllegalArgumentException(IllegalArgumentException ex) {
         return ResponseEntity.badRequest()
