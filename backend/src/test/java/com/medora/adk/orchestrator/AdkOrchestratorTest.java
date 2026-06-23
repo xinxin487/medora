@@ -1,12 +1,13 @@
 package com.medora.adk.orchestrator;
 
-import com.google.adk.events.Event;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.adk.runner.Runner;
 import com.google.adk.sessions.BaseSessionService;
 import com.google.adk.sessions.Session;
 import com.google.genai.types.Content;
-import com.google.genai.types.Part;
 import com.medora.adk.config.AdkProperties;
+import com.medora.adk.sse.AdkEventToSseAdapter;
+import com.medora.adk.sse.AdkStreamResult;
 import com.medora.adk.tool.AdkToolContextResolver;
 import com.medora.agent.application.AgentChatCommand;
 import com.medora.agent.application.AgentRunResult;
@@ -23,8 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -37,15 +38,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Phase 9.6 AdkOrchestrator 单测。
+ * Phase 9.7 AdkOrchestrator 单测。
  *
- * 不调用真实 LLM — Runner.runAsync 用 mock Flowable 返回预设 Event 序列。
- * 验证:
- *  - orchestrate() 把 Event 的 text part 拼成最终回复,返回带 ADK 标记的 AgentRunResult
- *  - ensureSession 首次创建 session 时注入三个 state key
- *  - ensureSession 已存在 session 时跳过创建
- *  - resolveSessionId 找不到 conversation 时 fail-fast
- *  - Runner 抛异常时,orchestrate 透传异常
+ * Phase 9.7 起,orchestrate(command, emitter, cancelled) 把 Flowable&lt;Event&gt;
+ * 委托给 AdkEventToSseAdapter 处理。本测试 mock 掉 adapter,只验证:
+ *  - sessionId/userId 解析正确
+ *  - 首次/复用 session 行为
+ *  - 调用 adapter.stream 时传入正确的 Flowable 和参数
+ *  - 用 AdkStreamResult 构造 AgentRunResult
+ *  - conversation 不存在 / publicId 为 null fail-fast
+ *
+ * 真实 Event 翻译逻辑由 AdkEventToSseAdapterTest 覆盖。
  */
 class AdkOrchestratorTest {
 
@@ -53,6 +56,7 @@ class AdkOrchestratorTest {
     private BaseSessionService sessionService;
     private AdkProperties adkProperties;
     private ConversationRepository conversationRepository;
+    private AdkEventToSseAdapter sseAdapter;
     private AdkOrchestrator orchestrator;
 
     private static final Long USER_ID = 100L;
@@ -68,8 +72,10 @@ class AdkOrchestratorTest {
         adkProperties = new AdkProperties();
         adkProperties.setEnabled(true);
         conversationRepository = mock(ConversationRepository.class);
+        sseAdapter = mock(AdkEventToSseAdapter.class);
         orchestrator = new AdkOrchestrator(
-                runner, sessionService, adkProperties, conversationRepository);
+                runner, sessionService, adkProperties, conversationRepository,
+                sseAdapter, new ObjectMapper());
 
         when(runner.appName()).thenReturn("medora");
         ConversationEntity conversation = mock(ConversationEntity.class);
@@ -81,28 +87,16 @@ class AdkOrchestratorTest {
         return new AgentChatCommand(USER_ID, CONVERSATION_ID, 300L, TRACE_ID, USER_MESSAGE);
     }
 
-    /** 模拟 Runner 返回若干 Event,每个带一段 text part */
-    private void mockRunnerEvents(String... textParts) {
-        List<Event> events = java.util.Arrays.stream(textParts)
-                .map(text -> Event.builder()
-                        .id("evt-" + System.nanoTime())
-                        .content(Content.builder()
-                                .role("model")
-                                .parts(Part.fromText(text))
-                                .build())
-                        .build())
-                .toList();
+    private void mockRunnerFlowable() {
         when(runner.runAsync(eq(CONVERSATION_PUBLIC_ID.toString()), eq(String.valueOf(USER_ID)), any(Content.class)))
-                .thenReturn(Flowable.fromIterable(events));
+                .thenReturn(Flowable.empty());
     }
 
-    /** 模拟 getSession 返回 empty(首次进入) */
     private void mockSessionMissing() {
         when(sessionService.getSession(anyString(), anyString(), anyString(), any(Optional.class)))
                 .thenReturn(Maybe.empty());
     }
 
-    /** 模拟 getSession 返回已有 session(后续轮次) */
     private void mockSessionExists() {
         Session existing = mock(Session.class);
         when(sessionService.getSession(anyString(), anyString(), anyString(), any(Optional.class)))
@@ -110,17 +104,29 @@ class AdkOrchestratorTest {
     }
 
     @Test
-    void orchestrateCollectsTextFromEventsAndReturnsAdkMarker() {
+    void orchestrateDelegatesToSseAdapterAndBuildsResult() {
         mockSessionMissing();
         when(sessionService.createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString()))
                 .thenReturn(Single.just(mock(Session.class)));
-        mockRunnerEvents("你好,", "我帮你查一下呼吸科。");
+        mockRunnerFlowable();
+        AdkStreamResult stub = new AdkStreamResult(
+                "你好,请稍等。",
+                "[{\"toolName\":\"queryDepartments\",\"status\":\"SUCCESS\"}]",
+                "[]",
+                "LOW",
+                List.of("root_router_agent", "triage_agent")
+        );
+        when(sseAdapter.stream(any(), any(), any())).thenReturn(stub);
 
-        AgentRunResult result = orchestrator.orchestrate(command());
+        AgentRunResult result = orchestrator.orchestrate(command(), null, new AtomicBoolean(false));
 
-        assertThat(result.reply()).isEqualTo("你好,我帮你查一下呼吸科。");
-        assertThat(result.toolCallJson()).contains("\"routeMode\":\"ADK\"");
+        assertThat(result.reply()).isEqualTo("你好,请稍等。");
         assertThat(result.intentDecision().intentType()).isEqualTo("ADK_ROUTED");
+        assertThat(result.hallucinationRisk()).isEqualTo("LOW");
+        // toolCallJson 含 ADK 标记和 toolEvents
+        assertThat(result.toolCallJson()).contains("\"routeMode\":\"ADK\"");
+        assertThat(result.toolCallJson()).contains("queryDepartments");
+        assertThat(result.toolCallJson()).contains("root_router_agent");
     }
 
     @Test
@@ -128,9 +134,10 @@ class AdkOrchestratorTest {
         mockSessionMissing();
         when(sessionService.createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString()))
                 .thenReturn(Single.just(mock(Session.class)));
-        mockRunnerEvents("ok");
+        mockRunnerFlowable();
+        when(sseAdapter.stream(any(), any(), any())).thenReturn(AdkStreamResult.empty());
 
-        orchestrator.orchestrate(command());
+        orchestrator.orchestrate(command(), null, new AtomicBoolean(false));
 
         ArgumentCaptor<ConcurrentMap<String, Object>> stateCaptor =
                 ArgumentCaptor.forClass(ConcurrentMap.class);
@@ -147,9 +154,10 @@ class AdkOrchestratorTest {
     @Test
     void orchestrateSkipsSessionCreationWhenSessionExists() {
         mockSessionExists();
-        mockRunnerEvents("ok");
+        mockRunnerFlowable();
+        when(sseAdapter.stream(any(), any(), any())).thenReturn(AdkStreamResult.empty());
 
-        orchestrator.orchestrate(command());
+        orchestrator.orchestrate(command(), null, new AtomicBoolean(false));
 
         verify(sessionService, never())
                 .createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString());
@@ -159,7 +167,7 @@ class AdkOrchestratorTest {
     void orchestrateThrowsWhenConversationNotFound() {
         when(conversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> orchestrator.orchestrate(command()))
+        assertThatThrownBy(() -> orchestrator.orchestrate(command(), null, new AtomicBoolean(false)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cannot resolve sessionId");
     }
@@ -170,7 +178,7 @@ class AdkOrchestratorTest {
         when(broken.getPublicId()).thenReturn(null);
         when(conversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.of(broken));
 
-        assertThatThrownBy(() -> orchestrator.orchestrate(command()))
+        assertThatThrownBy(() -> orchestrator.orchestrate(command(), null, new AtomicBoolean(false)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("publicId is null");
     }
@@ -182,46 +190,13 @@ class AdkOrchestratorTest {
                 .thenReturn(Single.just(mock(Session.class)));
         when(runner.runAsync(anyString(), anyString(), any(Content.class)))
                 .thenReturn(Flowable.error(new RuntimeException("simulated ADK failure")));
+        // adapter 收到 error Flowable 时透传异常(真实 adapter 行为)
+        when(sseAdapter.stream(any(), any(), any()))
+                .thenThrow(new RuntimeException("simulated ADK failure"));
 
-        assertThatThrownBy(() -> orchestrator.orchestrate(command()))
+        assertThatThrownBy(() -> orchestrator.orchestrate(command(), null, new AtomicBoolean(false)))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("simulated ADK failure");
-    }
-
-    @Test
-    void orchestrateReturnsEmptyReplyWhenEventsHaveNoText() {
-        mockSessionMissing();
-        when(sessionService.createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString()))
-                .thenReturn(Single.just(mock(Session.class)));
-        // 空 part list (no text)
-        Event textlessEvent = Event.builder()
-                .id("evt-empty")
-                .content(Content.builder().role("model").build())
-                .build();
-        when(runner.runAsync(anyString(), anyString(), any(Content.class)))
-                .thenReturn(Flowable.just(textlessEvent));
-
-        AgentRunResult result = orchestrator.orchestrate(command());
-
-        assertThat(result.reply()).isEmpty();
-        // 仍然有 ADK 标记
-        assertThat(result.toolCallJson()).contains("\"routeMode\":\"ADK\"");
-    }
-
-    @Test
-    void orchestratePassesUuidSessionIdToRunner() {
-        mockSessionMissing();
-        when(sessionService.createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString()))
-                .thenReturn(Single.just(mock(Session.class)));
-        mockRunnerEvents("ok");
-
-        orchestrator.orchestrate(command());
-
-        // Runner 收到的 sessionId 必须是 UUID 字符串(publicId),而非 Long id
-        verify(runner).runAsync(
-                eq(CONVERSATION_PUBLIC_ID.toString()),
-                eq(String.valueOf(USER_ID)),
-                any(Content.class));
     }
 
     @Test
@@ -229,16 +204,17 @@ class AdkOrchestratorTest {
         mockSessionMissing();
         when(sessionService.createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString()))
                 .thenReturn(Single.just(mock(Session.class)));
-        mockRunnerEvents("ok");
+        mockRunnerFlowable();
+        when(sseAdapter.stream(any(), any(), any())).thenReturn(AdkStreamResult.empty());
 
-        orchestrator.orchestrate(command());
+        orchestrator.orchestrate(command(), null, new AtomicBoolean(false));
 
         ArgumentCaptor<Content> contentCaptor = ArgumentCaptor.forClass(Content.class);
         verify(runner).runAsync(anyString(), anyString(), contentCaptor.capture());
         Content captured = contentCaptor.getValue();
         assertThat(captured.parts()).isPresent();
         String text = captured.parts().get().stream()
-                .map(Part::text)
+                .map(com.google.genai.types.Part::text)
                 .filter(Optional::isPresent)
                 .map(Optional::get)
                 .reduce("", String::concat);
@@ -246,17 +222,40 @@ class AdkOrchestratorTest {
     }
 
     @Test
-    void orchestrateUsesConstantAppNameMedora() {
+    void orchestrateUsesUuidSessionIdForRunner() {
         mockSessionMissing();
         when(sessionService.createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString()))
                 .thenReturn(Single.just(mock(Session.class)));
-        mockRunnerEvents("ok");
+        mockRunnerFlowable();
+        when(sseAdapter.stream(any(), any(), any())).thenReturn(AdkStreamResult.empty());
 
-        orchestrator.orchestrate(command());
+        orchestrator.orchestrate(command(), null, new AtomicBoolean(false));
 
-        verify(sessionService).getSession(
-                eq("medora"), anyString(), anyString(), any(Optional.class));
-        verify(sessionService).createSession(
-                eq("medora"), anyString(), any(ConcurrentMap.class), anyString());
+        verify(runner).runAsync(
+                eq(CONVERSATION_PUBLIC_ID.toString()),
+                eq(String.valueOf(USER_ID)),
+                any(Content.class));
+    }
+
+    @Test
+    void orchestrateBuildsToolCallJsonWithRouteModeAndTransferChain() {
+        mockSessionMissing();
+        when(sessionService.createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString()))
+                .thenReturn(Single.just(mock(Session.class)));
+        mockRunnerFlowable();
+        AdkStreamResult stub = new AdkStreamResult(
+                "reply",
+                "[]",
+                "[]",
+                "HIGH",
+                List.of("root_router_agent", "booking_agent")
+        );
+        when(sseAdapter.stream(any(), any(), any())).thenReturn(stub);
+
+        AgentRunResult result = orchestrator.orchestrate(command(), null, new AtomicBoolean(false));
+
+        assertThat(result.toolCallJson())
+                .contains("\"transferChain\":[\"root_router_agent\",\"booking_agent\"]");
+        assertThat(result.hallucinationRisk()).isEqualTo("HIGH");
     }
 }

@@ -110,7 +110,7 @@ ADK `Flowable<Event>` 到现有 SSE 协议的映射:
 
 ## Current Phase
 
-Phase 9.6(跨轮 slot 累积 + 灰度切换)— 已完成灰度切换骨架,mvn test 158/158 全绿(新增 10 个 AdkOrchestrator 单测)。下一步:Phase 9.7 SSE adapter + AgentTrace 接入(需要 UI 实测)。
+Phase 9.7(SSE 流式 + AgentTrace 接入)— 已完成 SSE adapter 主体 + 单测全绿(mvn test 170/170)。下一步:UI 实测前端 chat 页面 + Admin Agent Trace 页面的事件流兼容性,并跑性能基准(首 token 延迟对比)。
 
 ## LLM-first 设计原则(贯穿整个 Phase 9)
 
@@ -270,14 +270,23 @@ Phase 9.6(跨轮 slot 累积 + 灰度切换)— 已完成灰度切换骨架,mvn 
 
 ### Phase 9.7: SSE 流式 + AgentTrace 接入
 
-- [ ] 9.7.1 新建 `AdkEventToSseAdapter`,订阅 `Flowable<Event>`,按上文「SSE 协议兼容」表逐事件翻译为 SseEmitter 调用
-- [ ] 9.7.2 在 [ChatStreamController.java](../backend/src/main/java/com/medora/chat/controller/ChatStreamController.java) 或新的 `AdkChatStreamController` 中接入 adapter
-- [ ] 9.7.3 修改 [AgentTraceService.java](../backend/src/main/java/com/medora/agent/trace/AgentTraceService.java) 或新增 `AdkTraceSerializer`,把 ADK `Event` 序列化为现有 `AgentTraceEntity.events` JSON 格式
-- [ ] 9.7.4 前端协议兼容性验证:用现有 [frontend chat 页面](../frontend/) 跑一遍,事件流不应有任何感知差异;[Admin Agent Trace](../frontend/) 页面能正常展示 ADK 内部 transfer 事件
-- [ ] 9.7.5 性能基准:ADK 路径的端到端延迟(首 token)对比旧路径,差距应在 +20% 以内(否则需优化)
-- **Status:** pending
-- **涉及文件:** 新建 `backend/src/main/java/com/medora/adk/sse/AdkEventToSseAdapter.java`;修改或新增 trace 相关类
-- **关键点:** ADK 的 streaming 模型用 `LangChain4j(StreamingChatModel)`,需要在 DeepSeekModelConfig 里额外提供一个 streaming bean
+- [x] 9.7.1 新建 `AdkEventToSseAdapter`,订阅 `Flowable<Event>`,按上文「SSE 协议兼容」表逐事件翻译为 SseEmitter 调用 — `AdkEventToSseAdapter.stream(Flowable<Event>, SseEmitter, AtomicBoolean)` 通过 blockingForEach 逐事件处理,返回 `AdkStreamResult` 聚合 finalReply + toolEventsJson + safetyEventsJson + hallucinationRisk + transferChain
+- [x] 9.7.2 接入路径 — `ChatOrchestrator.handle()` 调用 `AdkOrchestrator.orchestrate(command, emitter, cancelled)`,后者内部用 adapter 实时推送 SSE。无需新增 controller,旧 `ChatStreamController` 链路透明复用
+- [x] 9.7.3 trace 字段填充 — `AdkStreamResult.toolEventsJson` 直接写入 `AgentRunResult.toolCallJson` 的 toolEvents 数组,由 `ChatRuntimeService.completeAssistantMessage` 经 `AgentTraceService.record` 落库;`hallucinationRisk` 也透传到 trace 实体
+- [ ] 9.7.4 前端协议兼容性验证(UI 实测):用 frontend chat 页面跑一遍,事件流不应有任何感知差异;Admin Agent Trace 页面能正常展示 ADK 内部 transfer 事件 — **待 UI 实测**
+- [ ] 9.7.5 性能基准(UI 实测):ADK 路径的端到端延迟(首 token)对比旧路径,差距应在 +20% 以内 — **待 UI 实测**
+- **Status:** SSE adapter + trace 字段填充主体完成,mvn test 170/170 全绿(Phase 9.6 是 158 → 9.7 新增 12 个 adapter 单测)。等用户 UI 实测后回填 9.7.4 / 9.7.5。
+- **涉及文件:**
+  - 新建 `backend/src/main/java/com/medora/adk/sse/AdkEventToSseAdapter.java` — Flowable 订阅 + SSE 翻译
+  - 新建 `backend/src/main/java/com/medora/adk/sse/AdkStreamResult.java` — 聚合结果 DTO
+  - 修改 `backend/src/main/java/com/medora/adk/orchestrator/AdkOrchestrator.java` — 入口签名改为 `(command, emitter, cancelled)`,内部委托给 adapter
+  - 修改 `backend/src/main/java/com/medora/agent/application/ChatOrchestrator.java` — 灰度分支直接转发 emitter + cancelled
+- **关键决策:**
+  - **事件级而非 token 级流式:** 当前 LangChain4j 桥接用 `OpenAiChatModel`(非 streaming),Event 是按 LLM 完整响应 + 工具调用切片产生的。要真正的 token 流,需在 DeepSeekModelConfig 加 `OpenAiStreamingChatModel` bean 并改 LangChain4j 桥接构造方式。Phase 9.7 先确认事件级流式协议正确,token 流作为后续优化
+  - **toolEvents 配对:** 用 `functionCall.id` → `pendingToolCalls` map 暂存 callId→toolName,收到 functionResponse 时配对消除。Phase 9.7 不再实际使用配对结果(直接从 response 取 name),保留 map 供 Phase 9.8 做更精细的调用链追踪
+  - **message_start / message_end 由谁发:** 保持现状由 `ChatRuntimeService` 在 handle() 前后发,adapter 不重复。这保证前端协议 100% 兼容
+  - **hallucinationRisk 启发式:** 当前用「hasRetrieval + hasLongReply」二元判断。Phase 9.8 接入 `LlmHallucinationAfterCallback` 后,改为从 callback score 读取(已在 callback 内做了 LLM 评分,这里不重复调)
+- **风险:** 真实 LLM 调用验证推迟到 UI 实测;mock 测试只覆盖协议翻译正确性,不覆盖 ADK Runner 内部多 agent 路由行为
 
 ### Phase 9.8: 旧代码清理 + 文档
 

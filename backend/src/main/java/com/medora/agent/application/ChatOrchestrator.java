@@ -80,19 +80,12 @@ public class ChatOrchestrator {
         if (cancelled.get()) {
             return abortResult(command);
         }
-        // Phase 9.6 灰度接入:ADK 启用时,委托给 AdkOrchestrator 走多 agent 路径
-        // (Phase 9.6 同步收集,9.7 改为 Flowable 订阅 + SSE adapter)
+        // Phase 9.7 灰度接入:ADK 启用时,委托给 AdkOrchestrator 走多 agent 路径
+        // SSE 由 AdkEventToSseAdapter 内部逐事件推送(message_delta / tool_status)
         if (adkProperties.isEnabled() && adkOrchestrator.isPresent()) {
             log.info("ADK gray-release enabled, delegating to AdkOrchestrator. conversationId={}, traceId={}",
                     command.conversationId(), command.traceId());
-            AgentRunResult adkResult = adkOrchestrator.get().orchestrate(command);
-            // Phase 9.6:把 ADK 收集到的整段回复作为单个 delta 推送(9.7 改为逐 token 流式)
-            if (adkResult.reply() != null && !adkResult.reply().isBlank()) {
-                for (String delta : splitDeltas(adkResult.reply())) {
-                    publishDelta(emitter, delta, cancelled);
-                }
-            }
-            return adkResult;
+            return adkOrchestrator.get().orchestrate(command, emitter, cancelled);
         }
         // 双层安全检查：正则快速前置 + LLM 语义审查
         SafetyGuard.CheckResult safetyCheck = safetyGuard.fullCheck(command.message());

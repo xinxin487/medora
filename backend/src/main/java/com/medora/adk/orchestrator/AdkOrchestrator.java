@@ -1,11 +1,15 @@
 package com.medora.adk.orchestrator;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.adk.events.Event;
 import com.google.adk.runner.Runner;
 import com.google.adk.sessions.BaseSessionService;
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 import com.medora.adk.config.AdkProperties;
+import com.medora.adk.sse.AdkEventToSseAdapter;
+import com.medora.adk.sse.AdkStreamResult;
 import com.medora.adk.tool.AdkToolContextResolver;
 import com.medora.agent.application.AgentChatCommand;
 import com.medora.agent.application.AgentRunResult;
@@ -18,11 +22,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * ADK Orchestrator — 灰度接入路径。
@@ -30,10 +38,11 @@ import java.util.concurrent.atomic.AtomicReference;
  * 职责:
  *  1) 从 AgentChatCommand 构造 user Content
  *  2) 通过 Runner.runAsync(sessionId, userId, content) 触发 ADK 多 agent 流程
- *  3) 收集所有 Event 的 text part,拼成最终回复
- *  4) 把回复包装为 AgentRunResult 返回(对 ChatOrchestrator 调用方透明)
+ *  3) 订阅 Flowable&lt;Event&gt;,经 AdkEventToSseAdapter 实时翻译为 SSE 推送
+ *  4) 订阅结束后,用 AdkStreamResult 构造 AgentRunResult 返回
  *
- * Phase 9.6:同步收集所有 Event,Phase 9.7 改为 Flowable 订阅 + SSE adapter。
+ * Phase 9.6:同步收集所有 Event(整段一次性推送)
+ * Phase 9.7:改为通过 AdkEventToSseAdapter 逐事件 SSE 推送 + 聚合 trace 字段
  *
  * Session 复用:
  *  - sessionId = conversation.publicId(从 Long id 查 ConversationEntity 得到 UUID)
@@ -42,8 +51,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *  - 后续轮次 getSession 命中,state 跨轮保持
  *
  * 灰度策略:
- *  ChatOrchestrator 入口判断 adkProperties.enabled,委托给本类。具体 intent 过滤
- *  (TRIAGE only 还是全 intent)由 ChatOrchestrator 决定,本类不重复判断。
+ *  ChatOrchestrator 入口判断 adkProperties.enabled,委托给本类。
+ *  本类不重复判断 intent,统一交给 RootRouterAgent 内部 LLM 路由。
  */
 @Component
 @ConditionalOnProperty(prefix = "medora.adk", name = "enabled", havingValue = "true")
@@ -55,18 +64,29 @@ public class AdkOrchestrator {
     private final BaseSessionService sessionService;
     private final AdkProperties adkProperties;
     private final ConversationRepository conversationRepository;
+    private final AdkEventToSseAdapter sseAdapter;
+    private final ObjectMapper objectMapper;
 
     public AdkOrchestrator(Runner adkRunner,
                            BaseSessionService sessionService,
                            AdkProperties adkProperties,
-                           ConversationRepository conversationRepository) {
+                           ConversationRepository conversationRepository,
+                           AdkEventToSseAdapter sseAdapter,
+                           ObjectMapper objectMapper) {
         this.adkRunner = adkRunner;
         this.sessionService = sessionService;
         this.adkProperties = adkProperties;
         this.conversationRepository = conversationRepository;
+        this.sseAdapter = sseAdapter;
+        this.objectMapper = objectMapper;
     }
 
-    public AgentRunResult orchestrate(AgentChatCommand command) {
+    /**
+     * Phase 9.7 主入口 — 接收 SseEmitter 和 cancelled,实时推送 SSE。
+     */
+    public AgentRunResult orchestrate(AgentChatCommand command,
+                                      SseEmitter emitter,
+                                      AtomicBoolean cancelled) {
         String sessionId = resolveSessionId(command.conversationId());
         String userId = String.valueOf(command.userAccountId());
         ensureSession(command, sessionId, userId);
@@ -77,28 +97,21 @@ public class AdkOrchestrator {
                 .build();
 
         long startMs = System.currentTimeMillis();
-        AtomicReference<String> finalReply = new AtomicReference<>("");
+        AdkStreamResult streamResult;
         try {
             Flowable<Event> events = adkRunner.runAsync(sessionId, userId, userContent);
-            StringBuilder text = new StringBuilder();
-            events.blockingForEach(event -> {
-                String part = extractText(event);
-                if (part != null && !part.isEmpty()) {
-                    text.append(part);
-                }
-            });
-            finalReply.set(text.toString());
+            streamResult = sseAdapter.stream(events, emitter, cancelled);
         } catch (RuntimeException ex) {
             log.error("ADK runAsync failed. conversationId={}, traceId={}",
                     command.conversationId(), command.traceId(), ex);
             throw ex;
         }
         long elapsed = System.currentTimeMillis() - startMs;
-        log.info("ADK orchestrate completed. conversationId={}, traceId={}, elapsedMs={}, replyLen={}",
-                command.conversationId(), command.traceId(), elapsed, finalReply.get().length());
+        log.info("ADK orchestrate completed. conversationId={}, traceId={}, elapsedMs={}, replyLen={}, toolEventsLen={}",
+                command.conversationId(), command.traceId(), elapsed,
+                streamResult.finalReply().length(),
+                streamResult.toolEventsJson().length());
 
-        // Phase 9.6 阶段:返回最小化的 AgentRunResult。
-        // intentDecision/riskFactors 等字段留空,9.7 SSE adapter 完善后再补。
         IntentDecision decision = new IntentDecision(
                 "ADK_ROUTED",
                 RouteMode.CHAT_ONLY,
@@ -107,16 +120,34 @@ public class AdkOrchestrator {
         );
         return new AgentRunResult(
                 decision,
-                finalReply.get(),
+                streamResult.finalReply(),
                 List.of(),
                 List.of(),
                 "[]",
-                "{\"routeMode\":\"ADK\"}",
+                buildToolCallJson(streamResult),
                 "{}",
-                "[]",
-                "LOW",
+                streamResult.safetyEventsJson(),
+                streamResult.hallucinationRisk(),
                 "[]"
         );
+    }
+
+    private String buildToolCallJson(AdkStreamResult result) {
+        // toolCallJson 字段保持与旧路径一致的 schema:{routeMode, transferChain, toolEvents}
+        try {
+            List<Map<String, Object>> toolEvents = objectMapper.readValue(
+                    result.toolEventsJson(),
+                    new TypeReference<>() {}
+            );
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("routeMode", "ADK");
+            payload.put("transferChain", result.transferChain());
+            payload.put("toolEvents", toolEvents);
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception ex) {
+            log.warn("failed to build toolCallJson, falling back to minimal marker", ex);
+            return "{\"routeMode\":\"ADK\"}";
+        }
     }
 
     /**
@@ -125,7 +156,7 @@ public class AdkOrchestrator {
      */
     private void ensureSession(AgentChatCommand command, String sessionId, String userId) {
         Object existing = sessionService.getSession(
-                adkRunner.appName(), userId, sessionId, java.util.Optional.empty()).blockingGet();
+                adkRunner.appName(), userId, sessionId, Optional.empty()).blockingGet();
         if (existing != null) {
             return;
         }
@@ -149,18 +180,7 @@ public class AdkOrchestrator {
         return publicId.toString();
     }
 
-    private static String extractText(Event event) {
-        return event.content()
-                .flatMap(Content::parts)
-                .map(parts -> parts.stream()
-                        .map(Part::text)
-                        .filter(java.util.Optional::isPresent)
-                        .map(java.util.Optional::get)
-                        .reduce("", String::concat))
-                .orElse("");
-    }
-
-    /** 调试用 — 用现有 conversationId 跑一次性测试 */
+    /** 调试用 — 用现有 conversationId 跑一次性测试(无 SSE,只返回结果) */
     public AgentRunResult orchestrateOneShot(Long userAccountId, Long conversationId, String message) {
         AgentChatCommand command = new AgentChatCommand(
                 userAccountId,
@@ -169,6 +189,6 @@ public class AdkOrchestrator {
                 "trace-oneshot",
                 message
         );
-        return orchestrate(command);
+        return orchestrate(command, null, new AtomicBoolean(false));
     }
 }
