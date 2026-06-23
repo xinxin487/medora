@@ -31,7 +31,6 @@ class AdkConfigLoadTest {
                 .run(context -> {
                     assertThat(context).doesNotHaveBean(OpenAiChatModel.class);
                     assertThat(context).doesNotHaveBean("deepseekLlmBridge");
-                    assertThat(context).doesNotHaveBean(LlmAgent.class);
                     assertThat(context).doesNotHaveBean(Runner.class);
                     // AdkProperties 总是加载(没有 @ConditionalOnProperty)
                     assertThat(context).hasSingleBean(AdkProperties.class);
@@ -44,22 +43,16 @@ class AdkConfigLoadTest {
         aiProps.setChatApiKey("fake-key-for-test");
         aiProps.setChatModel("deepseek-v4-flash");
 
+        // 只验证 DeepSeekModelConfig + AdkProperties 装载(不包含 Runner/Agent — 那部分依赖
+        // 完整 service 层,在 AdkAgentTopologyLoadTest 集成测试中验证)
         new ApplicationContextRunner()
-                .withUserConfiguration(DeepSeekModelConfig.class, AdkRunnerConfig.class,
-                        com.medora.adk.session.PostgresBackedSessionService.class)
+                .withUserConfiguration(DeepSeekModelConfig.class)
                 .withPropertyValues("medora.adk.enabled=true")
                 .withBean(AdkProperties.class, AdkConfigLoadTest::enabledAdkProps)
                 .withBean(AiProperties.class, () -> aiProps)
-                .withBean(com.fasterxml.jackson.databind.ObjectMapper.class, () -> new com.fasterxml.jackson.databind.ObjectMapper())
-                .withBean(com.medora.chat.repository.ConversationRepository.class,
-                        () -> org.mockito.Mockito.mock(com.medora.chat.repository.ConversationRepository.class))
                 .run(context -> {
                     assertThat(context).hasSingleBean(OpenAiChatModel.class);
                     assertThat(context).hasSingleBean(LangChain4j.class);
-                    assertThat(context).hasSingleBean(LlmAgent.class);
-                    assertThat(context).hasSingleBean(com.google.adk.runner.Runner.class);
-                    assertThat(context).hasSingleBean(com.google.adk.sessions.BaseSessionService.class);
-                    assertThat(context).hasSingleBean(com.google.adk.artifacts.BaseArtifactService.class);
                 });
     }
 

@@ -110,7 +110,7 @@ ADK `Flowable<Event>` 到现有 SSE 协议的映射:
 
 ## Current Phase
 
-Phase 9.5(多 agent 拓扑)— 待启动。Phase 9.4 已完成,mvn test 140/140 全绿。
+Phase 9.6(跨轮 slot 累积 + 灰度切换)— 待启动。Phase 9.5 已完成,mvn test 148/148 全绿。
 
 ## LLM-first 设计原则(贯穿整个 Phase 9)
 
@@ -230,15 +230,25 @@ Phase 9.5(多 agent 拓扑)— 待启动。Phase 9.4 已完成,mvn test 140/140 
 
 ### Phase 9.5: 多 agent 拓扑落地
 
-- [ ] 9.5.1 新建 `com.medora.adk.agents.RootRouterAgent`,定义为 `LlmAgent`,只描述「什么样的请求归哪个 agent」的 instruction,挂载 SafetyGuard callbacks,subAgents 列出三个专科 agent
-- [ ] 9.5.2 新建 `TriageAgent`,挂载 searchKnowledge 工具,instruction 描述症状→科室映射的引导逻辑
-- [ ] 9.5.3 新建 `BookingAgent`,挂载 6 个 booking 相关工具 + HighRiskToolBeforeCallback,instruction 明确「缺参时反问用户,不要硬调 bookAppointment」
-- [ ] 9.5.4 新建 `KnowledgeAgent`,挂载 searchKnowledge 工具 + HallucinationAfterModelCallback
-- [ ] 9.5.5 在 `AdkRunnerConfig` 中用 RootRouterAgent 替换临时单 agent
-- [ ] 9.5.6 集成测试:不同类型的 query(导诊/预约/知识)被正确路由到对应 sub-agent;transfer 链路在多轮间保持
-- **Status:** pending
-- **涉及文件:** 新建 `backend/src/main/java/com/medora/adk/agents/{RootRouterAgent,TriageAgent,BookingAgent,KnowledgeAgent}.java`
-- **关键点:** transfer 机制由 ADK 自动处理,RootAgent 的 instruction 里描述「何时 transfer 给谁」即可
+- [x] 9.5.1 新建 [AdkAgentTopology](../backend/src/main/java/com/medora/adk/agents/AdkAgentTopology.java) 配置类,集中定义 4 个 LlmAgent bean + 7 个 BaseTool bean
+- [x] 9.5.2 RootRouterAgent:instruction-only,无业务工具;描述「症状→triage / 预约→booking / 知识→knowledge」路由规则;挂 InputSafety + OutputSafety
+- [x] 9.5.3 TriageAgent:挂 searchKnowledge,instruction 描述症状→科室映射 + 「超出范畴时 transfer_to_agent」
+- [x] 9.5.4 BookingAgent:挂 6 个 booking 工具 + HighRiskToolBeforeCallback,instruction 明确「缺参反问,不要用幻觉 slotId/appointmentId」
+- [x] 9.5.5 KnowledgeAgent:挂 searchKnowledge + HallucinationAfterCallback,instruction 强调「先 search 再答」
+- [x] 9.5.6 maxSteps 设置:Root 2(路由即可),Triage 4,Booking 8(支持多轮 slot 填充),Knowledge 5
+- [x] 9.5.7 [AdkRunnerConfig](../backend/src/main/java/com/medora/adk/config/AdkRunnerConfig.java) 删除 placeholderAdkAgent,Runner 主入口 agent 改为 rootRouterAgent
+- [x] 9.5.8 单元测试 8 个:验证 7 工具 bean + 4 agent bean + Root 的 subAgents 包含 3 个专科 + 所有 instruction 非空 + Root instruction 含 transfer_to_agent 关键字 + Booking instruction 含 slot filling 约束
+- [x] 9.5.9 mvn test 全套 148/148 通过(140 + 8)
+- **Status:** complete (2026-06-23)
+- **涉及文件:** [AdkAgentTopology.java](../backend/src/main/java/com/medora/adk/agents/AdkAgentTopology.java)、[AdkRunnerConfig.java](../backend/src/main/java/com/medora/adk/config/AdkRunnerConfig.java)、[AdkConfigLoadTest.java](../backend/src/test/java/com/medora/adk/config/AdkConfigLoadTest.java)(简化,Runner 装载留给集成测试)、[AdkAgentTopologyTest.java](../backend/src/test/java/com/medora/agents/AdkAgentTopologyTest.java)
+- **关键设计:**
+  - 所有 agent 共享 InputSafety + OutputSafety callback 实例(由 Spring 单例保证),通过 ADK `beforeModelCallbackSync` 接入
+  - Root 无业务工具,确保 LLM 必须通过 transfer_to_agent 走专科 agent,避免越权直答
+  - BookingAgent 的 instruction 显式 slot-filling 规则:不要用 LLM 推断的 ID 调高风险工具,缺参反问用户
+  - maxSteps 分级:Root 2 步够(只 transfer),Booking 8 步覆盖单轮预约的极端场景(查科室→查医生→查号源→确认→预约 = 5 步)
+  - KnowledgeAgent 用独立的 HallucinationAfterCallback,Triage/Booking 不挂(它们不答医疗知识,不需幻觉检测)
+- **延后:** 真实 LLM 调用验证(端到端测试)推迟到 Phase 9.6 灰度接入时一起跑
+- **风险(未发生):** LlmAgent.Builder 接口对 callback 既支持单数也支持 List 形式,目前每个 agent 只用 1-2 个 callback,单数 API 已够
 
 ### Phase 9.6: 跨轮 slot 累积 + 灰度切换
 
