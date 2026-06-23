@@ -110,7 +110,7 @@ ADK `Flowable<Event>` 到现有 SSE 协议的映射:
 
 ## Current Phase
 
-Phase 9.3(Session/State 持久化)— 待启动。Phase 9.2 已完成,mvn test 78/78 全绿。
+Phase 9.4(Callback 改造)— 待启动。Phase 9.3 已完成,mvn test 92/92 全绿。
 
 ## LLM-first 设计原则(贯穿整个 Phase 9)
 
@@ -185,14 +185,25 @@ Phase 9.3(Session/State 持久化)— 待启动。Phase 9.2 已完成,mvn test 7
 
 ### Phase 9.3: Session/State 接入现有持久化层
 
-- [ ] 9.3.1 数据库迁移:在 `conversations` 表加 `session_state JSONB` 字段(向后兼容,允许 NULL);`schema.sql` + Flyway 迁移脚本
-- [ ] 9.3.2 实现 `PostgresBackedSessionService implements BaseSessionService`,内部用 Jackson 序列化 `MedoraSessionState` 到新字段
-- [ ] 9.3.3 实现 `RedisCachedSessionService` 包装层(L1 缓存),热会话状态走 Redis,落库走 Postgres
-- [ ] 9.3.4 在 `AdkRunnerConfig` 中把 `InMemoryRunner` 替换为 `Runner` + `PostgresBackedSessionService`
-- [ ] 9.3.5 集成测试:连续两轮对话,state 字段正确写入、读取;跨会话不串
-- **Status:** pending
-- **涉及文件:** 新建 `backend/src/main/java/com/medora/adk/session/PostgresBackedSessionService.java`、`RedisCachedSessionService.java`、`MedoraSessionState.java`;修改 [ConversationEntity.java](../backend/src/main/java/com/medora/chat/domain/ConversationEntity.java) 加 `sessionState` 字段;新增 Flyway 迁移
-- **风险:** BaseSessionService 接口要求返回 RxJava `Single/Maybe`,需要小心 reactive 风格;建议用 `CompletableFuture` 转 RxJava 适配
+- [x] 9.3.1 Flyway 迁移 V15:在 `conversation` 表加 `session_state JSONB` 字段(允许 NULL,后向兼容)
+- [x] 9.3.2 [ConversationEntity](../backend/src/main/java/com/medora/chat/domain/ConversationEntity.java) 加 `sessionState` 字段(`@JdbcTypeCode(SqlTypes.JSON) Map<String,Object>`)
+- [x] 9.3.3 实现 [PostgresBackedSessionService](../backend/src/main/java/com/medora/adk/session/PostgresBackedSessionService.java),implements BaseSessionService
+  - sessionId = conversation.publicId.toString()(UUID,跨系统安全)
+  - appName 固定 "medora"(与 Runner 对齐)
+  - state 读写均经 Jackson + JPA JSONB 自动序列化,无手写 JSON 转换
+  - listEvents/deleteSession/listSessions Phase 9.3 阶段占位(empty/no-op),9.7 时按 chat_message 反向构造 Event
+- [x] 9.3.4 [AdkRunnerConfig](../backend/src/main/java/com/medora/adk/config/AdkRunnerConfig.java) 把 `InMemoryRunner` 替换为 `Runner(placeholderAgent, appName, inMemoryArtifactService, postgresSessionService)`
+- [x] 9.3.5 单元测试 14 个,覆盖:createSession 持久化、getSession 读取/缺失、sessionId UUID 校验、Maybe.empty 语义(RxJava3 blockingGet 行为)、JSON 序列化 roundtrip
+- [x] 9.3.6 现有 5 个 AdkConfigLoadTest 用例同步更新(新增 BaseSessionService/BaseArtifactService bean 断言)
+- [x] 9.3.7 mvn test 全套 92/92 通过(78 + 14)
+- **Status:** complete (2026-06-23)
+- **涉及文件:** [V15__add_conversation_session_state.sql](../backend/src/main/resources/db/migration/V15__add_conversation_session_state.sql)、[ConversationEntity.java](../backend/src/main/java/com/medora/chat/domain/ConversationEntity.java)、[PostgresBackedSessionService.java](../backend/src/main/java/com/medora/adk/session/PostgresBackedSessionService.java)、[AdkRunnerConfig.java](../backend/src/main/java/com/medora/adk/config/AdkRunnerConfig.java)、[AdkConfigLoadTest.java](../backend/src/test/java/com/medora/adk/config/AdkConfigLoadTest.java)、[PostgresBackedSessionServiceTest.java](../backend/src/test/java/com/medora/adk/session/PostgresBackedSessionServiceTest.java)
+- **关键设计:**
+  - sessionId 复用 conversation.publicId,无需新增表或字段
+  - listEvents 占位而非实现,Phase 9.7 SSE 接入时再补;Phase 9.3 验证重点是 state 持久化
+  - Maybe.create 而非 Maybe.fromCallable,显式控制 onComplete vs onError
+- **延后:** RedisCachedSessionService(L1 缓存)推迟到 Phase 9.6 灰度时再加,Phase 9.3 单层 Postgres 已够用;MedoraSessionState 强类型 record 也推迟到 9.5 agent 拓扑成型后定义
+- **风险(未发生):** BaseSessionService 的 RxJava 接口比预期简单,Maybe/Single/Completable 各用一个工厂方法即可桥接同步 JPA
 
 ### Phase 9.4: Callback 改造 — 重写为分层 LLM 防护(非包装现有代码)
 
