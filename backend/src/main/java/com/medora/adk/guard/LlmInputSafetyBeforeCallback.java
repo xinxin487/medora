@@ -87,7 +87,7 @@ public class LlmInputSafetyBeforeCallback implements BeforeModelCallbackSync {
 
     @Override
     public Optional<LlmResponse> call(CallbackContext callbackContext, LlmRequest.Builder builder) {
-        String userMessage = extractUserMessage(builder);
+        String userMessage = extractUserMessage(callbackContext);
         SafetyDecision decision = check(userMessage);
         if (decision.allowed()) {
             return Optional.empty();
@@ -109,11 +109,21 @@ public class LlmInputSafetyBeforeCallback implements BeforeModelCallbackSync {
                 .build();
     }
 
-    /** 从 LlmRequest.Builder 提取最后一条 user content 的文本 */
-    private static String extractUserMessage(LlmRequest.Builder builder) {
-        // LlmRequest.Builder.contents() 在 build 前可读取(从 javap 看是 abstract 方法)
-        // 简化:不走 builder.contents(),改从 CallbackContext.userContent() 读取
-        return null; // 调用方实际走 check() 路径,callback 入口仅做 best-effort
+    /**
+     * 从 CallbackContext.userContent() 提取用户消息文本。
+     *
+     * LlmRequest.Builder 没有 contents() getter(只有 setter),所以走 CallbackContext 路径。
+     * userContent() 是 ReadonlyContext 提供的方法,返回 ADK 当前 turn 的 user content。
+     */
+    private static String extractUserMessage(CallbackContext callbackContext) {
+        return callbackContext.userContent()
+                .flatMap(Content::parts)
+                .map(parts -> parts.stream()
+                        .map(Part::text)
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .reduce("", String::concat))
+                .orElse(null);
     }
 
     private static String snippet(String text) {

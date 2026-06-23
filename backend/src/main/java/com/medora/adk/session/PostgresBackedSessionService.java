@@ -76,6 +76,8 @@ public class PostgresBackedSessionService implements BaseSessionService {
             Map<String, Object> writable = state == null ? Map.of() : new ConcurrentHashMap<>(state);
             entity.setSessionState(writable);
             conversationRepository.save(entity);
+            log.info("ADK createSession written. publicId={}, stateKeys={}, stateSize={}",
+                    conversationPublicId, writable.keySet(), writable.size());
             return toSession(entity, writable);
         });
     }
@@ -90,12 +92,15 @@ public class PostgresBackedSessionService implements BaseSessionService {
                 UUID publicId = parseSessionId(sessionId);
                 ConversationEntity entity = conversationRepository.findByPublicId(publicId).orElse(null);
                 if (entity == null) {
+                    log.info("ADK getSession miss (conversation not found). publicId={}", publicId);
                     emitter.onComplete();
                     return;
                 }
                 Map<String, Object> state = entity.getSessionState() == null
                         ? Collections.emptyMap()
                         : new ConcurrentHashMap<>(entity.getSessionState());
+                log.info("ADK getSession hit. publicId={}, stateKeys={}, stateSize={}",
+                        publicId, state.keySet(), state.size());
                 emitter.onSuccess(toSession(entity, state));
             } catch (RuntimeException ex) {
                 emitter.onError(ex);
@@ -127,12 +132,15 @@ public class PostgresBackedSessionService implements BaseSessionService {
     }
 
     private Session toSession(ConversationEntity entity, Map<String, Object> state) {
+        // events 必须用可变 list — BaseSessionService.appendEvent 会调用 list.add(event)
+        // 用 Collections.emptyList() 会抛 UnsupportedOperationException(Phase 9.7 实测发现)
+        // 这里用 CopyOnWriteArrayList 保证线程安全(Runner 内部多线程订阅)
         return Session.builder(appName)
                 .id(entity.getPublicId().toString())
                 .appName(appName)
                 .userId(String.valueOf(entity.getUserAccount().getId()))
                 .state(new State(new ConcurrentHashMap<>(state)))
-                .events(Collections.emptyList())
+                .events(new java.util.concurrent.CopyOnWriteArrayList<>())
                 .lastUpdateTime(Instant.now())
                 .build();
     }

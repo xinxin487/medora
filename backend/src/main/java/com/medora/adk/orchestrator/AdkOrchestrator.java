@@ -27,7 +27,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -46,9 +45,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * Session 复用:
  *  - sessionId = conversation.publicId(从 Long id 查 ConversationEntity 得到 UUID)
- *  - 首次进入时,PostgresBackedSessionService.getSession 返回 Maybe.empty,
- *    由本类显式 createSession 写入 userAccountId/userMessage/traceId 三个 state key
- *  - 后续轮次 getSession 命中,state 跨轮保持
+ *  - 每次请求都通过 createSession 写入 per-request state keys
+ *    (userAccountId/userMessage/traceId)。详见 ensureSession 注释。
  *
  * 灰度策略:
  *  ChatOrchestrator 入口判断 adkProperties.enabled,委托给本类。
@@ -99,7 +97,9 @@ public class AdkOrchestrator {
         long startMs = System.currentTimeMillis();
         AdkStreamResult streamResult;
         try {
-            Flowable<Event> events = adkRunner.runAsync(sessionId, userId, userContent);
+            // 注意:ADK Runner.runAsync 参数顺序是 (userId, sessionId, content),
+            // 不是 (sessionId, userId)。sessionId 必须是 UUID 字符串(这里来自 conversation.publicId)。
+            Flowable<Event> events = adkRunner.runAsync(userId, sessionId, userContent);
             streamResult = sseAdapter.stream(events, emitter, cancelled);
         } catch (RuntimeException ex) {
             log.error("ADK runAsync failed. conversationId={}, traceId={}",
@@ -151,15 +151,16 @@ public class AdkOrchestrator {
     }
 
     /**
-     * 首次进入会话时创建 session 并注入 ToolExecutionContext 所需的三个 state key。
-     * 后续轮次 session 已存在,跳过创建。
+     * 每次请求都写入 per-request state keys。
+     *
+     * 为什么不能 "session 已存在就跳过":PostgresBackedSessionService.getSession 对任何存在的
+     * conversation 都返回非空 Session(即使 sessionState 为空)。所以 "skip if exists" 永远生效,
+     * state 永远不会写入,导致 ToolExecutionContext 解析失败(tool 找不到 medora:userAccountId)。
+     *
+     * userMessage / traceId 是 per-request 字段,必须每轮覆盖。userAccountId 同一用户不变,
+     * 但每轮重写也无害。createSession 是幂等写入(用新 state 覆盖 conversation.sessionState)。
      */
     private void ensureSession(AgentChatCommand command, String sessionId, String userId) {
-        Object existing = sessionService.getSession(
-                adkRunner.appName(), userId, sessionId, Optional.empty()).blockingGet();
-        if (existing != null) {
-            return;
-        }
         ConcurrentHashMap<String, Object> state = new ConcurrentHashMap<>();
         state.put(AdkToolContextResolver.KEY_USER_ACCOUNT_ID, command.userAccountId());
         state.put(AdkToolContextResolver.KEY_USER_MESSAGE, command.message());

@@ -140,6 +140,18 @@
             <groupId>com.google.adk</groupId>
             <artifactId>google-adk</artifactId>
             <version>0.3.0</version>
+            <exclusions>
+                <!-- docker-java-transport-jersey 通过 jackson-jaxrs-json-provider 拉进
+                     jackson-module-jaxb-annotations,后者 import javax.xml.bind.annotation.XmlElement,
+                     而 Java 11+ 已移除 javax.xml.bind。
+                     Hibernate 初始化 JacksonJsonFormatMapper 时 findAndRegisterModules()
+                     会触发 JAXB module 加载并 ClassNotFoundException。
+                     Jersey transport 我们不用(ADK 内部用 OkHttp),排除即可。 -->
+                <exclusion>
+                    <groupId>com.github.docker-java</groupId>
+                    <artifactId>docker-java-transport-jersey</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.google.adk</groupId>

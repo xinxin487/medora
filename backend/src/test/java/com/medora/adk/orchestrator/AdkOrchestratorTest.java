@@ -33,7 +33,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -88,7 +87,8 @@ class AdkOrchestratorTest {
     }
 
     private void mockRunnerFlowable() {
-        when(runner.runAsync(eq(CONVERSATION_PUBLIC_ID.toString()), eq(String.valueOf(USER_ID)), any(Content.class)))
+        // 注意 ADK Runner.runAsync 参数顺序是 (userId, sessionId, content),不是 (sessionId, userId)
+        when(runner.runAsync(eq(String.valueOf(USER_ID)), eq(CONVERSATION_PUBLIC_ID.toString()), any(Content.class)))
                 .thenReturn(Flowable.empty());
     }
 
@@ -152,15 +152,26 @@ class AdkOrchestratorTest {
     }
 
     @Test
-    void orchestrateSkipsSessionCreationWhenSessionExists() {
+    void orchestrateAlwaysWritesStateKeysEvenWhenSessionExists() {
+        // 关键回归:即便 session 已存在,也必须重写 state keys。
+        // 早期实现用 "session 已存在就跳过" 的策略,但 PostgresBackedSessionService.getSession
+        // 对任何存在的 conversation 都返回非空 Session,导致 state 永远不写,tool 找不到
+        // medora:userAccountId 等关键 key(2026-06-23 实测发现的 bug)。
         mockSessionExists();
+        when(sessionService.createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString()))
+                .thenReturn(Single.just(mock(Session.class)));
         mockRunnerFlowable();
         when(sseAdapter.stream(any(), any(), any())).thenReturn(AdkStreamResult.empty());
 
         orchestrator.orchestrate(command(), null, new AtomicBoolean(false));
 
-        verify(sessionService, never())
-                .createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString());
+        ArgumentCaptor<ConcurrentMap<String, Object>> stateCaptor =
+                ArgumentCaptor.forClass(ConcurrentMap.class);
+        verify(sessionService).createSession(
+                eq("medora"), eq(String.valueOf(USER_ID)), stateCaptor.capture(),
+                eq(CONVERSATION_PUBLIC_ID.toString()));
+        assertThat(stateCaptor.getValue())
+                .containsEntry(AdkToolContextResolver.KEY_USER_ACCOUNT_ID, USER_ID);
     }
 
     @Test
@@ -231,9 +242,11 @@ class AdkOrchestratorTest {
 
         orchestrator.orchestrate(command(), null, new AtomicBoolean(false));
 
+        // ADK Runner.runAsync(userId, sessionId, content) — 顺序反了会把 userId 当 sessionId 传
+        // 导致 PostgresBackedSessionService.parseSessionId 抛 "sessionId must be a UUID, got: 1"
         verify(runner).runAsync(
-                eq(CONVERSATION_PUBLIC_ID.toString()),
                 eq(String.valueOf(USER_ID)),
+                eq(CONVERSATION_PUBLIC_ID.toString()),
                 any(Content.class));
     }
 
