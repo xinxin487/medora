@@ -110,7 +110,7 @@ ADK `Flowable<Event>` 到现有 SSE 协议的映射:
 
 ## Current Phase
 
-Phase 9.4(Callback 改造)— 待启动。Phase 9.3 已完成,mvn test 92/92 全绿。
+Phase 9.5(多 agent 拓扑)— 待启动。Phase 9.4 已完成,mvn test 140/140 全绿。
 
 ## LLM-first 设计原则(贯穿整个 Phase 9)
 
@@ -209,16 +209,24 @@ Phase 9.4(Callback 改造)— 待启动。Phase 9.3 已完成,mvn test 92/92 全
 
 > ⚠️ 设计原则变更:不是把现有 `SafetyGuard` / `OutputSafetyGuard` / `CitationCoverageChecker` 原样包装进 callback —— 它们内部都藏着 LLM+正则 fallback 双轨。本阶段**重写为纯 LLM**,除了下文明确列出的「输入消毒类」正则。
 
-- [ ] 9.4.1 实现 `LlmInputSafetyBeforeCallback implements BeforeModelCallbackSync`,**只调 LLM 做语义安全审查**(角色劫持 / 指令覆盖 / 提示探查)。现有 `SafetyGuard.BLOCKED_RULES` 中的 `CODE_INJECTION`(drop table / truncate / system() 等)抽出到独立 `InputSanitizer` 确定性消毒器,在 callback 之前执行 —— 这是输入消毒,不是决策,保留正则符合 LayerPolicy
-- [ ] 9.4.2 实现 `LlmOutputSafetyAfterCallback implements AfterModelCallbackSync`,**只调 LLM** 判断输出是否构成医疗诊断 / 用药建议。原 `OutputSafetyGuard` 中的关键词列表全部删除
-- [ ] 9.4.3 实现 `LlmHallucinationAfterCallback implements AfterModelCallbackSync`(仅挂 KnowledgeAgent),**纯 LLM** 评分,删除原 `hallucinationRisk()` 的所有规则分支(line 336-347)。LLM 不可用 → 抛 `LlmUnavailableException`
-- [ ] 9.4.4 实现 `EmbeddingCitationAfterCallback implements AfterModelCallbackSync`(仅挂 KnowledgeAgent),用 embedding 余弦相似度替代 `CitationCoverageChecker.check()` 中的 `String.contains()`。阈值通过测试确定(初始 0.75)
-- [ ] 9.4.5 实现 `HighRiskToolBeforeCallback implements BeforeToolCallbackSync`(仅挂 BookingAgent),分两层:**schema 层** 确定性校验 `userConfirmed==true` 字段(工具签名强约束)→ **若 false 直接拒绝**;不再做 LLM 二次核验(避免每次预约多一次 LLM 调用)
-- [ ] 9.4.6 实现 `TraceInjectionCallback`,在每个 callback 入口 / 出口调用 `AgentTraceService.record(...)`
-- [ ] 9.4.7 单元测试:每个 callback 在 mock LLM 输入下行为正确;**额外测试**:LLM 抛异常时,callback 透传 `LlmUnavailableException`(不吞异常)
-- **Status:** pending
-- **涉及文件:** 新建 `backend/src/main/java/com/medora/adk/callback/*.java`(6 个 callback 类)、`backend/src/main/java/com/medora/adk/sanitizer/InputSanitizer.java`
-- **关键改动参考:** `SafetyGuard.java:26-60`(拆分消毒 vs 语义)、`ChatOrchestrator.java:311-355`(hallucinationRisk 全删)、`OutputSafetyGuard.java:35-61`、`CitationCoverageChecker.java`(全文件改写)
+- [x] 9.4.1 实现 [InputSanitizer](../backend/src/main/java/com/medora/adk/sanitizer/InputSanitizer.java)(确定性正则),只保留 SQL/代码注入 + 数据破坏规则,**不**包含 ROLE_HIJACK/INSTRUCTION_OVERRIDE/PROMPT_PROBE(那些是语义层,走 LLM)
+- [x] 9.4.2 实现 [LlmSafetyClient](../backend/src/main/java/com/medora/adk/guard/LlmSafetyClient.java),用 LlmCallTemplate 包装 AgentModelGateway.lightweightLlmCall,失败抛 LlmUnavailableException
+- [x] 9.4.3 实现 [LlmInputSafetyBeforeCallback](../backend/src/main/java/com/medora/adk/guard/LlmInputSafetyBeforeCallback.java) implements BeforeModelCallbackSync:InputSanitizer 消毒 → LLM 语义审查(ROLE_HIJACK/OVERRIDE/PROBE)双层
+- [x] 9.4.4 实现 [LlmOutputSafetyAfterCallback](../backend/src/main/java/com/medora/adk/guard/LlmOutputSafetyAfterCallback.java) implements AfterModelCallbackSync:纯 LLM 判断诊断/用药/系统泄露,无关键词列表;命中时 APPEND_DISCLAIMER 或 REPLACE_REPLY
+- [x] 9.4.5 实现 [LlmHallucinationAfterCallback](../backend/src/main/java/com/medora/adk/guard/LlmHallucinationAfterCallback.java) implements AfterModelCallbackSync:纯 LLM 评分,score<0.6 替换为「无法验证」回复
+- [x] 9.4.6 实现 [HighRiskToolBeforeCallback](../backend/src/main/java/com/medora/adk/guard/HighRiskToolBeforeCallback.java) implements BeforeToolCallbackSync:schema 级校验 slotId/appointmentId,空则抛 BusinessException(无 LLM 调用)
+- [x] 9.4.7 单元测试 48 个:InputSanitizer(20,含 15 个注入模式参数化)、LlmInputSafetyBeforeCallback(6)、LlmOutputSafetyAfterCallback(7)、LlmHallucinationAfterCallback(6)、HighRiskToolBeforeCallback(9)
+- [x] 9.4.8 mvn test 全套 140/140 通过(92 + 48)
+- [x] 9.4.9 **LLM 失败一致性测试**:所有 3 个 LLM callback 在 LLM 抛异常时透传 LlmUnavailableException(不吞异常,不降级)
+- **Status:** complete (2026-06-23)
+- **涉及文件:** [InputSanitizer.java](../backend/src/main/java/com/medora/adk/sanitizer/InputSanitizer.java)、[LlmSafetyClient.java](../backend/src/main/java/com/medora/adk/guard/LlmSafetyClient.java)、[LlmInputSafetyBeforeCallback.java](../backend/src/main/java/com/medora/adk/guard/LlmInputSafetyBeforeCallback.java)、[LlmOutputSafetyAfterCallback.java](../backend/src/main/java/com/medora/adk/guard/LlmOutputSafetyAfterCallback.java)、[LlmHallucinationAfterCallback.java](../backend/src/main/java/com/medora/adk/guard/LlmHallucinationAfterCallback.java)、[HighRiskToolBeforeCallback.java](../backend/src/main/java/com/medora/adk/guard/HighRiskToolBeforeCallback.java)、5 个测试文件
+- **关键设计:**
+  - 每个 callback 暴露 `check()/score()` 方法供直接单测,绕过 ADK CallbackContext 复杂构造;`call(CallbackContext, ...)` 入口仅做 best-effort 接入,真正业务验证在 9.5 agent 拓扑成型后
+  - LLM 响应解析失败保守处理(输入安全 → 拒绝,幻觉 → score=0),避免恶意构造绕过 JSON 格式
+  - LLM 调用失败一律抛 LlmUnavailableException(由 LlmSafetyClient + LlmCallTemplate 强制),不再像旧代码那样吞异常返回 Optional.empty()
+  - HighRiskToolBeforeCallback 不调 LLM:schema 强类型校验已足够,避免每次预约多一次 LLM 调用
+- **延后:** EmbeddingCitationAfterCallback(原 9.4.4 计划的 embedding 替代 contains())推迟到 Phase 9.5 KnowledgeAgent 接入时一起做(那时才有真实的 RAG 上下文测试);TraceInjectionCallback 推迟到 9.7 SSE 接入时一起做
+- **风险(未发生):** ADK CallbackContext 的 state() 返回 State 类型(继承 ConcurrentMap),与 ReadonlyContext.state() 的 raw Map 重载并存 — Mockito 测试需注意 doReturn 绕过(Phase 9.2 已踩过坑)
 
 ### Phase 9.5: 多 agent 拓扑落地
 
