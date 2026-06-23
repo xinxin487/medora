@@ -110,7 +110,7 @@ ADK `Flowable<Event>` 到现有 SSE 协议的映射:
 
 ## Current Phase
 
-Phase 9.2(工具桥接)— 待启动。Phase 9.1 已完成,mvn test 51/51 全绿。
+Phase 9.3(Session/State 持久化)— 待启动。Phase 9.2 已完成,mvn test 78/78 全绿。
 
 ## LLM-first 设计原则(贯穿整个 Phase 9)
 
@@ -166,14 +166,22 @@ Phase 9.2(工具桥接)— 待启动。Phase 9.1 已完成,mvn test 51/51 全绿
 
 ### Phase 9.2: 工具桥接 — 7 个 ToolDefinition 包装为 ADK FunctionTool
 
-- [ ] 9.2.1 新建 `com.medora.adk.tool.ToolDefinitionAsFunctionTool`,实现 `FunctionTool` 接口,把现有 `ToolDefinition.execute(args, ctx)` 适配为 ADK 期待的 `Map<String,Object> → Map<String,Object>` 签名
-- [ ] 9.2.2 为高风险工具(`bookAppointment`、`cancelAppointment`)定义强类型 `record` 入参,字段标 `@Schema`,替代现有 `Map<String,Object>` 通用入参
-- [ ] 9.2.3 为查询类工具(`queryDepartments`、`queryDoctors`、`queryScheduleSlots`、`getUserAppointments`、`searchKnowledge`)同样定义强类型入参
-- [ ] 9.2.4 单元测试:每个工具能被 ADK `FunctionTool` 框架正确反射出 schema,空参 / 全参 / 缺参三种 case 都能正确处理
-- [ ] 9.2.5 验证:`mvn test -Dtest='*FunctionTool*Test'` 全绿
-- **Status:** pending
-- **涉及文件:** 新建 `backend/src/main/java/com/medora/adk/tool/ToolDefinitionAsFunctionTool.java`,新建 `backend/src/main/java/com/medora/adk/tool/dto/*.java`(各工具的 record 入参);测试在 `backend/src/test/java/com/medora/adk/tool/`
-- **风险:** ADK 的 `FunctionTool.create` 默认走反射,自定义适配器更可控但代码量大;先尝试反射方案,失败再走自定义
+- [x] 9.2.1 设计决定:**不**用 `FunctionTool.create(Object, String)` 反射方案,改为直接子类化 `BaseTool`(`MedoraFunctionTool`),原因:ToolExecutionContext 包含 LLM 不可见的用户账号/trace ID,无法被反射框架处理
+- [x] 9.2.2 新建 `ToolSchemaDescriptor` + `ToolSchemaRegistry`,以声明式 record + builder 模式定义 7 个工具的 schema(name/description/parameters/required/enum)
+- [x] 9.2.3 高风险工具 `bookAppointment` / `cancelAppointment` 的必填字段(slotId/appointmentId)在 schema 中标记 required,供后续 9.4 HighRiskToolBeforeCallback 校验
+- [x] 9.2.4 查询类工具的 enum 字段(periodCode=AM/PM、status=5 种预约状态)在 schema 中暴露给 LLM
+- [x] 9.2.5 新建 `AdkToolContextResolver`,从 session state 解析 ToolExecutionContext(userAccountId/userMessage/traceId);fail-fast 缺字段时抛 IllegalStateException
+- [x] 9.2.6 新建 `MedoraFunctionTool extends BaseTool`:declaration() 暴露 FunctionDeclaration,runAsync 调用底层 ToolDefinition 并把 ToolExecutionResult 序列化为 status/summary/data/errorCode/errorMessage 结构
+- [x] 9.2.7 BusinessException 单独捕获保留 code/message(不丢业务错误语义),其他 RuntimeException 兜底返回类名作为 errorCode
+- [x] 9.2.8 单元测试:ToolSchemaRegistry(10)、AdkToolContextResolver(8)、MedoraFunctionTool(9),共 27 个用例全绿
+- **Status:** complete (2026-06-23)
+- **涉及文件:** [ToolSchemaDescriptor.java](../backend/src/main/java/com/medora/adk/tool/ToolSchemaDescriptor.java)、[ToolSchemaRegistry.java](../backend/src/main/java/com/medora/adk/tool/ToolSchemaRegistry.java)、[AdkToolContextResolver.java](../backend/src/main/java/com/medora/adk/tool/AdkToolContextResolver.java)、[MedoraFunctionTool.java](../backend/src/main/java/com/medora/adk/tool/MedoraFunctionTool.java)、3 个测试文件在 `backend/src/test/java/com/medora/adk/tool/`
+- **关键设计:**
+  - ToolExecutionContext 字段以 `medora:` 前缀存入 session state,避免与 ADK 内部 key(以 `_` 开头)冲突
+  - LLM 可见的工具 schema 与 LLM 不可见的 session state 字段分离,职责清晰
+  - 所有 7 个工具的 schema 在 ToolSchemaRegistry 中集中维护,新增工具只改一处
+  - runAsync 的失败结构对 LLM 友好(稳定字段名 + 中文 errorMessage),便于 LLM 决定反问 vs 重试
+- **风险(未发生):** BaseTool 子类化方案比 FunctionTool 反射方案代码量大,但避免了「ToolExecutionContext 怎么注入」的死结
 
 ### Phase 9.3: Session/State 接入现有持久化层
 
