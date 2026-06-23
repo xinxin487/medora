@@ -110,7 +110,7 @@ ADK `Flowable<Event>` 到现有 SSE 协议的映射:
 
 ## Current Phase
 
-Phase 9.1(ADK 依赖接入)— 待启动
+Phase 9.2(工具桥接)— 待启动。Phase 9.1 已完成,mvn test 51/51 全绿。
 
 ## LLM-first 设计原则(贯穿整个 Phase 9)
 
@@ -149,15 +149,20 @@ Phase 9.1(ADK 依赖接入)— 待启动
 
 ### Phase 9.1: 主 backend 引入 ADK 依赖,基础配置就位
 
-- [ ] 9.1.1 在 [backend/pom.xml](../backend/pom.xml) 添加三个依赖:`google-adk:0.3.0`、`google-adk-langchain4j:0.3.0`、`langchain4j-open-ai:1.0.1`
-- [ ] 9.1.2 在 `<maven-compiler-plugin>` 配置中加 `<parameters>true</parameters>`(消掉 POC 中的 `@Schema` 警告)
-- [ ] 9.1.3 新建 `com.medora.adk.config.DeepSeekModelConfig`,提供 `OpenAiChatModel` Bean(从 `.env` 的 `AI_CHAT_*` 读取,baseUrl 切换到 `/v1` 而非 `/anthropic`)
-- [ ] 9.1.4 新建 `com.medora.adk.config.AdkRunnerConfig`,提供 `InMemoryRunner` Bean(临时用内存版,9.3 替换为持久化版)
-- [ ] 9.1.5 配置项 `medora.adk.enabled=false`,默认关闭,所有 9.x 阶段都不影响生产路径
-- [ ] 9.1.6 验证:`mvn test` 通过;后端正常启动;ADK Bean 加载但不接入业务
-- **Status:** pending
-- **涉及文件:** `backend/pom.xml`,新建 `backend/src/main/java/com/medora/adk/config/DeepSeekModelConfig.java`、`AdkRunnerConfig.java`
-- **风险:** LangChain4j 1.0.1 与 Spring Boot 3.x 自动配置可能冲突;若冲突,在主启动类排除 LangChain4j 自动配置
+- [x] 9.1.1 在 [backend/pom.xml](../backend/pom.xml) 添加三个依赖:`google-adk:0.3.0`、`google-adk-langchain4j:0.3.0`、`langchain4j-open-ai:1.0.1`
+- [x] 9.1.2 在 `<maven-compiler-plugin>` 配置中加 `<parameters>true</parameters>`(消掉 POC 中的 `@Schema` 警告)
+- [x] 9.1.3 新建 `com.medora.adk.config.DeepSeekModelConfig`,提供 `OpenAiChatModel` Bean(从 `.env` 的 `AI_CHAT_*` 读取,baseUrl 切换到 `/v1` 而非 `/anthropic`);额外提供 `LangChain4j deepseekLlmBridge` 桥接 bean
+- [x] 9.1.4 新建 `com.medora.adk.config.AdkRunnerConfig`,提供 `InMemoryRunner` Bean(临时用内存版,9.3 替换为持久化版)
+- [x] 9.1.5 配置项 `medora.adk.enabled=false`,默认关闭,所有 9.x 阶段都不影响生产路径;`@ConditionalOnProperty` 守护所有 ADK bean
+- [x] 9.1.6 验证:`mvn test` 通过 51/51(46 + 5 新增);后端正常启动;ADK Bean 加载但不接入业务
+- **Status:** complete (2026-06-23)
+- **涉及文件:** [backend/pom.xml](../backend/pom.xml)、[application.yml](../backend/src/main/resources/application.yml)、[AdkProperties.java](../backend/src/main/java/com/medora/adk/config/AdkProperties.java)、[DeepSeekModelConfig.java](../backend/src/main/java/com/medora/adk/config/DeepSeekModelConfig.java)、[AdkRunnerConfig.java](../backend/src/main/java/com/medora/adk/config/AdkRunnerConfig.java)、[AdkConfigLoadTest.java](../backend/src/test/java/com/medora/adk/config/AdkConfigLoadTest.java)
+- **关键设计:**
+  - DeepSeek key 和 model 名复用 `AiProperties` 现有字段(POC 验证两端点共用),仅 `deepseek-base-url` 单独配
+  - Fail-fast:启用 ADK 时缺 key/model 直接抛 `IllegalStateException`,不留隐形 bug
+  - `@ConditionalOnProperty(prefix="medora.adk", name="enabled", havingValue="true")` 保证默认关闭时零影响
+  - AdkProperties 无条件加载(无 @ConditionalOnProperty),其余 bean 全部条件加载
+- **风险(未发生):** LangChain4j 1.0.1 与 Spring Boot 3.x 自动配置未发现冲突,无需排除自动配置
 
 ### Phase 9.2: 工具桥接 — 7 个 ToolDefinition 包装为 ADK FunctionTool
 

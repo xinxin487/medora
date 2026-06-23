@@ -88,3 +88,9 @@ medora:
       secret: ${JWT_SECRET:dev-only-medora-jwt-secret-key-change-before-prod-2026}
       access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT2H}
       refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:P14D}
+  adk:
+    # Phase 9: ADK 重构灰度开关。默认关闭,所有 ADK Bean 不加载。
+    # 设为 true 时,要求 medora.ai.chat-api-key 必须配置(复用现有 DeepSeek key)。
+    enabled: ${MEDORA_ADK_ENABLED:false}
+    # DeepSeek OpenAI 兼容端点(注意:与 medora.ai.chat-base-url 的 /anthropic 不同)
+    deepseek-base-url: ${DEEPSEEK_OPENAI_BASE_URL:https://api.deepseek.com/v1}
