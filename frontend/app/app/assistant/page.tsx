@@ -15,6 +15,7 @@ import type {
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { Panel } from "@/components/panel";
 import { Badge } from "@/components/badge";
+import { Markdown } from "@/components/markdown";
 
 const quickPrompts = [
   "我最近咳嗽，应该挂哪个科？",
@@ -77,6 +78,26 @@ export default function AssistantPage() {
         );
       }
     }, false);
+  }
+
+  async function deleteConversation(conversationId: string) {
+    if (isStreaming) return;
+    if (!window.confirm("确认删除这个会话?删除后不在列表中展示,但审计记录保留。")) {
+      return;
+    }
+    await runAction(async () => {
+      await apiFetch(`/chat/conversations/${conversationId}`, {
+        method: "DELETE",
+      });
+      setConversations((cur) =>
+        cur.filter((c) => c.conversationId !== conversationId),
+      );
+      if (activeConversationId === conversationId) {
+        startTransition(() => setActiveConversationId(""));
+        setMessages([]);
+        setStatus("会话已删除,请新建或选择其他会话。");
+      }
+    });
   }
 
   async function createConversation() {
@@ -317,23 +338,41 @@ export default function AssistantPage() {
         {conversations.map((conv) => {
           const isActive = conv.conversationId === activeConversationId;
           return (
-            <button
+            <div
               key={conv.conversationId}
-              type="button"
-              disabled={isStreaming}
-              onClick={() =>
-                startTransition(() =>
-                  setActiveConversationId(conv.conversationId),
-                )
-              }
-              className={`shrink-0 rounded-full border px-4 py-2 text-xs font-semibold transition ${
+              className={`group flex shrink-0 items-center rounded-full border transition ${
                 isActive
                   ? "border-[var(--accent-main)] bg-[var(--accent-main)] text-white"
                   : "border-[var(--line-soft)] bg-white/80 text-[var(--ink-body)] hover:border-[var(--accent-main)]"
               }`}
             >
-              {conv.title}
-            </button>
+              <button
+                type="button"
+                disabled={isStreaming}
+                onClick={() =>
+                  startTransition(() =>
+                    setActiveConversationId(conv.conversationId),
+                  )
+                }
+                className="rounded-l-full px-4 py-2 text-xs font-semibold"
+              >
+                {conv.title}
+              </button>
+              <button
+                type="button"
+                disabled={isStreaming}
+                onClick={() => void deleteConversation(conv.conversationId)}
+                title="删除会话"
+                aria-label={`删除会话 ${conv.title}`}
+                className={`rounded-r-full px-2 py-2 text-xs transition ${
+                  isActive
+                    ? "text-white/70 hover:bg-white/20 hover:text-white"
+                    : "text-[var(--ink-subtle)] hover:bg-[var(--danger-soft)] hover:text-[#8a4a3a]"
+                }`}
+              >
+                ×
+              </button>
+            </div>
           );
         })}
         <button
@@ -405,7 +444,11 @@ export default function AssistantPage() {
                   <div className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] opacity-70">
                     {msg.role === "USER" ? "You" : "Medora"}
                   </div>
-                  {msg.content || (msg.pending ? "正在生成..." : "")}
+                  {msg.role === "ASSISTANT" && msg.content ? (
+                    <Markdown content={msg.content} />
+                  ) : (
+                    msg.content || (msg.pending ? "正在生成..." : "")
+                  )}
                   {msg.role === "ASSISTANT" &&
                     parseCitations(msg.citations).length > 0 && (
                       <div className="mt-4 space-y-2 border-t border-[rgba(20,42,39,0.1)] pt-3">

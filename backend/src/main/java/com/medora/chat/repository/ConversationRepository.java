@@ -21,4 +21,10 @@ public interface ConversationRepository extends JpaRepository<ConversationEntity
             UserAccountEntity userAccount,
             Pageable pageable
     );
+
+    Page<ConversationEntity> findByUserAccountAndStatusNotOrderByLastMessageAtDescCreatedAtDesc(
+            UserAccountEntity userAccount,
+            String status,
+            Pageable pageable
+    );
 }

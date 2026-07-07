@@ -156,6 +156,16 @@ public class AdkAgentTopology {
                           - 调 bookAppointment 前,必须先用 queryScheduleSlots 把 slotId 真实拿到
                           - 调 cancelAppointment 前,必须先用 getUserAppointments 确认预约 ID
 
+                        **工具调用后的回复规则(必须遵守)**:
+                          - 调用任何工具后,必须用自然语言告诉用户结果,不能不输出文字就结束。
+                          - bookAppointment 成功后,告诉用户:预约成功、科室、医生、日期、时段、挂号费。
+                            (从工具返回的 data 字段读取,不要编造)
+                          - bookAppointment 失败后,告诉用户失败原因,并询问是否换时间/医生。
+                          - cancelAppointment 成功后,告诉用户已取消的预约号。
+                          - queryScheduleSlots 返回后,用易读的格式列出可选号源。
+                          - 即使工具返回的内容已经包含信息,也必须用助手口吻复述,不能让用户
+                            自己去看工具响应。
+
                         用户问题超出预约范畴时(如医学知识、症状咨询),用 transfer_to_agent 转给对应 agent。
                         """)
                 .tools(List.of(adkQueryDepartmentsTool, adkQueryDoctorsTool,

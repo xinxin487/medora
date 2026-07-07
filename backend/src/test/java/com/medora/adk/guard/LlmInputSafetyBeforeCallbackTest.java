@@ -1,9 +1,14 @@
 package com.medora.adk.guard;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.adk.models.LlmRequest;
 import com.medora.adk.sanitizer.InputSanitizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,8 +24,13 @@ import static org.mockito.Mockito.when;
  *  3) LLM 判定安全 → passed
  *  4) LLM 调用失败 → 抛 LlmUnavailableException(不降级,符合 LLM-first)
  *  5) LLM 响应不可解析 → 视为 unsafe(保守)
+ *  6) today 注入用 Clock bean(Asia/Shanghai),晚上 8 点跨日 bug 不复现
  */
 class LlmInputSafetyBeforeCallbackTest {
+
+    // 北京时间 2026-06-30 08:00 = UTC 2026-06-30 00:00。固定 Clock 让 today=2026-06-30 稳定。
+    private static final Clock FIXED_CLOCK = Clock.fixed(
+            Instant.parse("2026-06-30T00:00:00Z"), ZoneOffset.ofHours(8));
 
     private LlmSafetyClient llmSafetyClient;
     private LlmInputSafetyBeforeCallback callback;
@@ -29,7 +39,7 @@ class LlmInputSafetyBeforeCallbackTest {
     void setUp() {
         llmSafetyClient = mock(LlmSafetyClient.class);
         callback = new LlmInputSafetyBeforeCallback(llmSafetyClient, new InputSanitizer(),
-                new ObjectMapper());
+                new ObjectMapper(), FIXED_CLOCK);
     }
 
     @Test
@@ -91,5 +101,37 @@ class LlmInputSafetyBeforeCallbackTest {
         LlmInputSafetyBeforeCallback.SafetyDecision decision = callback.check("");
         assertThat(decision.allowed()).isFalse();
         assertThat(decision.category()).isEqualTo("INPUT_SANITIZER");
+    }
+
+    @Test
+    void injectsTodayAndWeekdayIntoInstructions() {
+        LlmRequest.Builder builder = LlmRequest.builder();
+
+        callback.injectTodayContext(builder);
+
+        var instructions = builder.build().getSystemInstructions();
+        assertThat(instructions).anyMatch(s -> s.contains("2026-06-30"));
+        assertThat(instructions).anyMatch(s -> s.contains("星期二")); // 2026-06-30 是星期二
+    }
+
+    /**
+     * 复现"晚上 8 点跨日" bug:UTC 2026-06-30T16:00:00Z 即北京时间 2026-07-01 00:00。
+     * 旧代码裸用 LocalDate.now() 在 UTC 时区下会注入 2026-06-30,把"今天"算错一天。
+     * 修复后用 Clock bean(Asia/Shanghai),应注入 2026-07-01。
+     */
+    @Test
+    void injectsBeijingTodayEvenWhenUtcCrossesDay() {
+        // JVM 默认时区故意设 UTC(模拟容器环境),Clock bean 用 Asia/Shanghai
+        Clock utcClockButBeijingZone = Clock.fixed(
+                Instant.parse("2026-06-30T16:00:00Z"), ZoneOffset.ofHours(8));
+        LlmInputSafetyBeforeCallback beijingCallback = new LlmInputSafetyBeforeCallback(
+                llmSafetyClient, new InputSanitizer(), new ObjectMapper(), utcClockButBeijingZone);
+        LlmRequest.Builder builder = LlmRequest.builder();
+
+        beijingCallback.injectTodayContext(builder);
+
+        var instructions = builder.build().getSystemInstructions();
+        assertThat(instructions).anyMatch(s -> s.contains("2026-07-01"));
+        assertThat(instructions).noneMatch(s -> s.contains("2026-06-30"));
     }
 }

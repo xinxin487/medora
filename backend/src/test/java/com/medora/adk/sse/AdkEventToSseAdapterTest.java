@@ -6,6 +6,7 @@ import com.google.genai.types.Content;
 import com.google.genai.types.FunctionCall;
 import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.Part;
+import com.medora.agent.application.AgentModelGateway;
 import com.medora.chat.sse.StreamEventPublisher;
 import io.reactivex.rxjava3.core.Flowable;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +17,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +30,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Phase 9.7 AdkEventToSseAdapter 单测 — 不调真实 Runner / SseEmitter,
@@ -46,13 +49,17 @@ import static org.mockito.Mockito.verify;
 class AdkEventToSseAdapterTest {
 
     private StreamEventPublisher publisher;
+    private AgentModelGateway agentModelGateway;
     private AdkEventToSseAdapter adapter;
     private SseEmitter emitter;
 
     @BeforeEach
     void setUp() throws IOException {
         publisher = mock(StreamEventPublisher.class);
-        adapter = new AdkEventToSseAdapter(publisher, new ObjectMapper());
+        agentModelGateway = mock(AgentModelGateway.class);
+        // 默认让 LLM 调用返回空,触发模板兜底;个别测试需要 LLM 时再 stub
+        when(agentModelGateway.lightweightLlmCall(anyString(), anyString())).thenReturn(Optional.empty());
+        adapter = new AdkEventToSseAdapter(publisher, new ObjectMapper(), agentModelGateway);
         emitter = mock(SseEmitter.class);
     }
 
@@ -287,5 +294,39 @@ class AdkEventToSseAdapterTest {
         assertThat(deltas).contains("正在为您查询。", "找到呼吸科,正在查询医生。");
         assertThat(result.finalReply()).contains("正在为您查询。");
         assertThat(result.finalReply()).contains("找到呼吸科");
+    }
+
+    @Test
+    void streamUsesLlmSummaryWhenModelStopsAfterToolCall() throws IOException {
+        // 模拟 DeepSeek 行为:调完工具直接 STOP,没产出文本
+        when(agentModelGateway.lightweightLlmCall(anyString(), anyString()))
+                .thenReturn(Optional.of("已为您查询到 3 个呼吸内科医生,请问您想预约哪一位?"));
+
+        Flowable<Event> events = Flowable.just(
+                functionCallEvent("queryDoctors", "c1", Map.of()),
+                functionResponseEvent("queryDoctors", "c1", Map.of("summary", "3 个医生"))
+        );
+
+        AdkStreamResult result = adapter.stream(events, emitter, new AtomicBoolean(false));
+
+        assertThat(result.finalReply()).isEqualTo("已为您查询到 3 个呼吸内科医生,请问您想预约哪一位?");
+        verify(agentModelGateway).lightweightLlmCall(anyString(), anyString());
+    }
+
+    @Test
+    void streamFallsBackToTemplateWhenLlmReturnsEmpty() throws IOException {
+        // LLM 调用失败 / 返回空 → 退化到模板兜底,不能让前端看到空白
+        when(agentModelGateway.lightweightLlmCall(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+
+        Flowable<Event> events = Flowable.just(
+                functionCallEvent("queryDoctors", "c1", Map.of()),
+                functionResponseEvent("queryDoctors", "c1", Map.of("summary", "3 个医生"))
+        );
+
+        AdkStreamResult result = adapter.stream(events, emitter, new AtomicBoolean(false));
+
+        assertThat(result.finalReply()).startsWith("已完成:");
+        assertThat(result.finalReply()).contains("3 个医生");
     }
 }

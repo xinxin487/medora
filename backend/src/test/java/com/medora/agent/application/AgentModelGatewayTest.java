@@ -9,6 +9,9 @@ import com.medora.agent.tool.ToolRegistry;
 import com.medora.ai.config.AiProperties;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
@@ -17,7 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AgentModelGatewayTest {
 
-    private final AgentModelGateway gateway = new AgentModelGateway(new AiProperties(), new ObjectMapper(), testRegistry());
+    private final AgentModelGateway gateway = new AgentModelGateway(
+            new AiProperties(),
+            new ObjectMapper(),
+            testRegistry(),
+            Clock.fixed(Instant.parse("2026-06-30T00:00:00Z"), ZoneOffset.ofHours(8)));
 
     private static ToolRegistry testRegistry() {
         return new ToolRegistry(List.of(

@@ -86,8 +86,41 @@ class MedoraFunctionToolTest {
         Map<String, Object> output = result.blockingGet();
         assertThat(output.get("status")).isEqualTo("SUCCESS");
         assertThat(output.get("summary")).isEqualTo("已查询到 0 个科室。");
-        assertThat(output.get("data")).isSameAs(data);
         assertThat(output).doesNotContainKey("errorCode");
+    }
+
+    /**
+     * 防回归:工具返回包含 OffsetDateTime 的 record(如 AppointmentItem.bookedAt)时,
+     * 必须能被 ADK 内部 ObjectMapper 序列化。修复前会抛 InvalidDefinitionException。
+     *
+     * 这里通过把序列化后的 data 重新 writeValueAsString 来验证 —— 如果 data 还是 raw Java 对象,
+     * 一个没注册 JavaTimeModule 的默认 ObjectMapper 会失败;修复后 data 已经是 JsonNode,
+     * 任何 ObjectMapper 都能写。
+     */
+    @Test
+    void runAsyncNormalizesOffsetDateTimeInDataForAdkSerialization() throws Exception {
+        ToolDefinition def = mock(ToolDefinition.class);
+        java.time.OffsetDateTime bookedAt = java.time.OffsetDateTime.parse("2026-06-29T10:30:00+08:00");
+        Object data = java.util.List.of(Map.of(
+                "appointmentId", "APT-1",
+                "bookedAt", bookedAt
+        ));
+        ToolExecutionResult successResult = ToolExecutionResult.success(
+                ToolNames.GET_USER_APPOINTMENTS, data, "已查询到 1 条预约记录。");
+        when(def.execute(anyMap(), any(ToolExecutionContext.class))).thenReturn(successResult);
+
+        ToolSchemaDescriptor descriptor = new ToolSchemaRegistry().get(ToolNames.GET_USER_APPOINTMENTS);
+        MedoraFunctionTool tool = new MedoraFunctionTool(def, descriptor);
+
+        Map<String, Object> output = tool.runAsync(Map.of(), stubToolContext()).blockingGet();
+
+        // 模拟 ADK LangChain4j.toJson —— 用一个 *没有* JavaTimeModule 的默认 ObjectMapper 重写
+        com.fasterxml.jackson.databind.ObjectMapper adkBareMapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        String json = adkBareMapper.writeValueAsString(output);
+        assertThat(json).contains("APT-1");
+        assertThat(json).contains("2026-06-29T10:30:00");
+        assertThat(json).contains("已查询到 1 条预约记录");
     }
 
     @Test

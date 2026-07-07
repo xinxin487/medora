@@ -19,6 +19,20 @@ public class KnowledgeVectorSearchRepository {
     }
 
     public List<KnowledgeChunkSearchRow> searchPublished(double[] embedding, String bizScope, int limit) {
+        return searchPublished(embedding, bizScope, limit, null);
+    }
+
+    /**
+     * 向量检索。
+     *
+     * @param embeddingModel 当前查询用的 embedding 模型名(来自 EmbeddingService 配置)。
+     *                       传 null 时不按模型过滤(向后兼容)。
+     *                       传值时只检索同模型产生的 chunk,避免不同模型的向量空间混用导致乱序。
+     */
+    public List<KnowledgeChunkSearchRow> searchPublished(double[] embedding,
+                                                         String bizScope,
+                                                         int limit,
+                                                         String embeddingModel) {
         if (embedding == null || embedding.length == 0) {
             return List.of();
         }
@@ -41,6 +55,7 @@ public class KnowledgeVectorSearchRepository {
                       and d.publish_status = 'PUBLISHED'
                       and d.ingest_status = 'INDEXED'
                       and (? is null or d.biz_scope = ?)
+                      and (? is null or c.embedding_model = ?)
                     order by score desc, d.uploaded_at desc, c.chunk_index asc
                     limit ?
                     """;
@@ -49,7 +64,9 @@ public class KnowledgeVectorSearchRepository {
                 String normalizedBizScope = normalizeToNull(bizScope);
                 ps.setString(2, normalizedBizScope);
                 ps.setString(3, normalizedBizScope);
-                ps.setInt(4, Math.max(limit, 1));
+                ps.setString(4, embeddingModel);
+                ps.setString(5, embeddingModel);
+                ps.setInt(6, Math.max(limit, 1));
                 try (var rs = ps.executeQuery()) {
                     List<KnowledgeChunkSearchRow> results = new ArrayList<>();
                     while (rs.next()) {

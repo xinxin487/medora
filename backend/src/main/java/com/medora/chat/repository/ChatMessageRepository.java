@@ -23,5 +23,11 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
 
     List<ChatMessageEntity> findTop12ByConversationOrderByCreatedAtDescIdDesc(ConversationEntity conversation);
 
+    /**
+     * 最近 N 条消息(倒序取,业务层按需 reverse)。
+     * 给 ADK PostgresBackedSessionService.listEvents 用 —— 反构历史对话给 LLM 看。
+     */
+    List<ChatMessageEntity> findTop30ByConversationOrderByCreatedAtDescIdDesc(ConversationEntity conversation);
+
     long countByConversation(ConversationEntity conversation);
 }

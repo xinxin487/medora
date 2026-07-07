@@ -5,6 +5,7 @@ import com.medora.agent.trace.AgentTraceRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,16 +15,18 @@ import java.util.Map;
 public class AdminSafetyQueryService {
 
     private final AgentTraceRepository agentTraceRepository;
+    private final Clock clock;
 
-    public AdminSafetyQueryService(AgentTraceRepository agentTraceRepository) {
+    public AdminSafetyQueryService(AgentTraceRepository agentTraceRepository, Clock clock) {
         this.agentTraceRepository = agentTraceRepository;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
     public SafetyStatsResponse getSafetyStats() {
         // 查询最近7天的 trace 记录
         List<AgentTraceEntity> allRecent = agentTraceRepository.findAll();
-        LocalDate cutoff = LocalDate.now().minusDays(7);
+        LocalDate cutoff = LocalDate.now(clock).minusDays(7);
         List<AgentTraceEntity> recent = allRecent.stream()
                 .filter(t -> t.getCreatedAt() != null && t.getCreatedAt().toLocalDate().isAfter(cutoff))
                 .toList();

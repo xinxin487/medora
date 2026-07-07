@@ -26,6 +26,8 @@ public class VectorRetriever {
             return List.of();
         }
         EmbeddingVector embedding = embeddingService.embed(query.trim());
-        return knowledgeVectorSearchRepository.searchPublished(embedding.values(), bizScope, Math.max(1, topK));
+        // 只检索同模型的 chunk。不同 embedding 模型的向量空间不兼容,混用会得到乱序结果。
+        return knowledgeVectorSearchRepository.searchPublished(
+                embedding.values(), bizScope, Math.max(1, topK), embedding.model());
     }
 }

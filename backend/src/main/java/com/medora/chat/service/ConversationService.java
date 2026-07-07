@@ -60,9 +60,18 @@ public class ConversationService {
     public PageResponse<ConversationItem> listMine(Integer pageNo, Integer pageSize) {
         UserAccountEntity userAccount = getCurrentUserAccount();
         var page = conversationRepository
-                .findByUserAccountOrderByLastMessageAtDescCreatedAtDesc(userAccount, toPageRequest(pageNo, pageSize))
+                .findByUserAccountAndStatusNotOrderByLastMessageAtDescCreatedAtDesc(
+                        userAccount, "DELETED", toPageRequest(pageNo, pageSize))
                 .map(ConversationResponseMapper::toItem);
         return PageResponse.from(page);
+    }
+
+    @Transactional
+    public void delete(String conversationId) {
+        UserAccountEntity userAccount = getCurrentUserAccount();
+        ConversationEntity conversation = findOwnedConversation(conversationId, userAccount);
+        conversation.markDeleted();
+        conversationRepository.save(conversation);
     }
 
     @Transactional(readOnly = true)

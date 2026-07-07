@@ -81,6 +81,7 @@ medora:
     embedding-model: ${AI_EMBEDDING_MODEL}
     embedding-dimensions: ${AI_EMBEDDING_DIMENSIONS:1024}
     context-cache-ttl-seconds: ${CONTEXT_CACHE_TTL:1800}
+    zone-id: ${MEDORA_ZONE_ID:Asia/Shanghai}
   minio:
     endpoint: ${MINIO_ENDPOINT}
     access-key: ${MINIO_ACCESS_KEY}

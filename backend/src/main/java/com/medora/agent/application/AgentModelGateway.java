@@ -24,6 +24,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -45,12 +46,14 @@ public class AgentModelGateway {
     private final ObjectMapper objectMapper;
     private final ToolRegistry toolRegistry;
     private final HttpClient httpClient;
+    private final Clock clock;
 
-    public AgentModelGateway(AiProperties aiProperties, ObjectMapper objectMapper, ToolRegistry toolRegistry) {
+    public AgentModelGateway(AiProperties aiProperties, ObjectMapper objectMapper, ToolRegistry toolRegistry, Clock clock) {
         this.aiProperties = aiProperties;
         this.objectMapper = objectMapper;
         this.toolRegistry = toolRegistry;
         this.httpClient = buildHttpClient();
+        this.clock = clock;
     }
 
     public Optional<String> generateReply(String userMessage,
@@ -509,7 +512,7 @@ public class AgentModelGateway {
     }
 
     private String plannerUserPrompt(String userMessage) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         return toJson(Map.of(
                 "today", today.toString(),
                 "dayOfWeek", today.getDayOfWeek().toString(),

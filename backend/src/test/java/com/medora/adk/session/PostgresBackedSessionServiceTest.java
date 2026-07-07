@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.adk.sessions.Session;
 import com.medora.adk.config.AdkProperties;
 import com.medora.auth.domain.UserAccountEntity;
+import com.medora.chat.domain.ChatMessageEntity;
 import com.medora.chat.domain.ConversationEntity;
+import com.medora.chat.repository.ChatMessageRepository;
 import com.medora.chat.repository.ConversationRepository;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
@@ -12,6 +14,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +43,7 @@ import static org.mockito.Mockito.when;
 class PostgresBackedSessionServiceTest {
 
     private ConversationRepository conversationRepository;
+    private ChatMessageRepository chatMessageRepository;
     private PostgresBackedSessionService service;
     private UUID conversationPublicId;
     private ConversationEntity conversationEntity;
@@ -46,10 +51,11 @@ class PostgresBackedSessionServiceTest {
     @BeforeEach
     void setUp() {
         conversationRepository = mock(ConversationRepository.class);
+        chatMessageRepository = mock(ChatMessageRepository.class);
         AdkProperties adkProperties = new AdkProperties();
         adkProperties.setEnabled(true);
         service = new PostgresBackedSessionService(
-                conversationRepository, new ObjectMapper(), adkProperties);
+                conversationRepository, chatMessageRepository, new ObjectMapper(), adkProperties);
 
         conversationPublicId = UUID.randomUUID();
         conversationEntity = mock(ConversationEntity.class);
@@ -184,11 +190,117 @@ class PostgresBackedSessionServiceTest {
     }
 
     @Test
-    void listEventsReturnsEmptyForNow() {
+    void listEventsReturnsEmptyWhenConversationMissing() {
+        when(conversationRepository.findByPublicId(conversationPublicId))
+                .thenReturn(Optional.empty());
+
         List<?> events = service.listEvents("medora", "42", conversationPublicId.toString())
                 .blockingGet()
                 .events();
         assertThat(events).isEmpty();
+    }
+
+    @Test
+    void listEventsReturnsEmptyWhenNoMessages() {
+        when(conversationRepository.findByPublicId(conversationPublicId))
+                .thenReturn(Optional.of(conversationEntity));
+        when(chatMessageRepository.findTop30ByConversationOrderByCreatedAtDescIdDesc(conversationEntity))
+                .thenReturn(List.of());
+
+        List<?> events = service.listEvents("medora", "42", conversationPublicId.toString())
+                .blockingGet()
+                .events();
+        assertThat(events).isEmpty();
+    }
+
+    @Test
+    void listEventsReconstructsUserAndAssistantMessagesInOrder() {
+        when(conversationRepository.findByPublicId(conversationPublicId))
+                .thenReturn(Optional.of(conversationEntity));
+        // repository 倒序返回,service 内部 reverse 后给 LLM 看正序
+        List<ChatMessageEntity> descMessages = new ArrayList<>();
+        descMessages.add(msg("ASSISTANT", "请问挂哪个科?", OffsetDateTime.now().plusSeconds(2)));
+        descMessages.add(msg("USER", "我想挂号", OffsetDateTime.now().plusSeconds(1)));
+        descMessages.add(msg("USER", "你好", OffsetDateTime.now()));
+        when(chatMessageRepository.findTop30ByConversationOrderByCreatedAtDescIdDesc(conversationEntity))
+                .thenReturn(descMessages);
+
+        List<com.google.adk.events.Event> events = service.listEvents(
+                        "medora", "42", conversationPublicId.toString())
+                .blockingGet()
+                .events();
+
+        assertThat(events).hasSize(3);
+        // 正序: USER "你好" → USER "我想挂号" → ASSISTANT "请问挂哪个科?"
+        assertThat(events.get(0).author()).isEqualTo("user");
+        assertThat(events.get(0).content().get().parts().get().get(0).text().get()).isEqualTo("你好");
+        assertThat(events.get(1).author()).isEqualTo("user");
+        assertThat(events.get(1).content().get().parts().get().get(0).text().get()).isEqualTo("我想挂号");
+        assertThat(events.get(2).author()).isEqualTo("root_router_agent");
+        assertThat(events.get(2).content().get().parts().get().get(0).text().get()).isEqualTo("请问挂哪个科?");
+        // 所有 event 都标记为 turnComplete(完整轮次,不是 partial)
+        assertThat(events).allSatisfy(e -> assertThat(e.turnComplete()).hasValue(true));
+    }
+
+    @Test
+    void listEventsSkipsBlankAssistantPlaceholder() {
+        when(conversationRepository.findByPublicId(conversationPublicId))
+                .thenReturn(Optional.of(conversationEntity));
+        List<ChatMessageEntity> descMessages = new ArrayList<>();
+        // 流式开始时会先插一条 content="" 的 assistant 占位消息,反构时应跳过
+        descMessages.add(msg("ASSISTANT", "", OffsetDateTime.now().plusSeconds(2)));
+        descMessages.add(msg("ASSISTANT", "   ", OffsetDateTime.now().plusSeconds(1)));
+        descMessages.add(msg("USER", "你好", OffsetDateTime.now()));
+        when(chatMessageRepository.findTop30ByConversationOrderByCreatedAtDescIdDesc(conversationEntity))
+                .thenReturn(descMessages);
+
+        List<com.google.adk.events.Event> events = service.listEvents(
+                        "medora", "42", conversationPublicId.toString())
+                .blockingGet()
+                .events();
+
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).author()).isEqualTo("user");
+    }
+
+    @Test
+    void createSessionMergesWithExistingState() {
+        // 模拟上一轮已写入 slot 累积
+        Map<String, Object> existingState = new HashMap<>();
+        existingState.put("triageSymptoms", List.of("咳嗽", "流鼻涕"));
+        existingState.put("triageRecommendedDept", "RESPIRATORY");
+        when(conversationEntity.getSessionState()).thenReturn(existingState);
+        when(conversationRepository.findByPublicId(conversationPublicId))
+                .thenReturn(Optional.of(conversationEntity));
+
+        // 这一轮的 per-request state
+        ConcurrentHashMap<String, Object> incoming = new ConcurrentHashMap<>();
+        incoming.put("medora:userAccountId", 42L);
+        incoming.put("medora:userMessage", "帮我预约");
+
+        service.createSession("medora", "42", incoming, conversationPublicId.toString())
+                .blockingGet();
+
+        // 直接 captor setSessionState 的入参,因为 save() 传入的是 mock entity,
+        // 它的 getSessionState() 被 stub 成永远返回 existingState,无法反映 merge 结果
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> stateCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(conversationEntity).setSessionState(stateCaptor.capture());
+        Map<String, Object> saved = stateCaptor.getValue();
+        // 已有的 slot 累积必须保留
+        assertThat(saved).containsKey("triageSymptoms");
+        assertThat(saved).containsKey("triageRecommendedDept");
+        // 新的 per-request key 也写入
+        assertThat(saved).containsEntry("medora:userAccountId", 42L);
+        assertThat(saved).containsEntry("medora:userMessage", "帮我预约");
+    }
+
+    private ChatMessageEntity msg(String role, String content, OffsetDateTime createdAt) {
+        ChatMessageEntity m = mock(ChatMessageEntity.class);
+        when(m.getRole()).thenReturn(role);
+        when(m.getContent()).thenReturn(content);
+        when(m.getCreatedAt()).thenReturn(createdAt);
+        return m;
     }
 
     @Test

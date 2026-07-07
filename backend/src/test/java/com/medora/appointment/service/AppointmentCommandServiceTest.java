@@ -21,8 +21,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -60,7 +63,8 @@ class AppointmentCommandServiceTest {
                 appointmentRepository,
                 operationLogRepository,
                 auditLogService,
-                medoraMetricsService
+                medoraMetricsService,
+                Clock.fixed(Instant.parse("2026-06-30T00:00:00Z"), ZoneOffset.ofHours(8))
         );
     }
 

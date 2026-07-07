@@ -72,6 +72,10 @@ public class ConversationEntity extends BaseEntity {
         this.lastMessageAt = lastMessageAt;
     }
 
+    public void markDeleted() {
+        this.status = "DELETED";
+    }
+
     public Map<String, Object> getSessionState() {
         return sessionState;
     }

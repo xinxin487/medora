@@ -20,6 +20,7 @@ public class AiProperties {
     private int chunkOverlapSize = 120;
     private boolean insecureTls = false;
     private int contextCacheTtlSeconds = 3600;
+    private String zoneId = "Asia/Shanghai";
 
     public int getChunkTargetSize() {
         return chunkTargetSize;
@@ -123,5 +124,13 @@ public class AiProperties {
 
     public void setContextCacheTtlSeconds(int contextCacheTtlSeconds) {
         this.contextCacheTtlSeconds = contextCacheTtlSeconds;
+    }
+
+    public String getZoneId() {
+        return zoneId;
+    }
+
+    public void setZoneId(String zoneId) {
+        this.zoneId = zoneId;
     }
 }

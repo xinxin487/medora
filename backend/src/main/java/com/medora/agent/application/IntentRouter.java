@@ -4,6 +4,7 @@ import com.medora.agent.tool.ToolNames;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -22,6 +23,12 @@ import java.util.regex.Pattern;
  */
 @Component
 public class IntentRouter {
+
+    private final Clock clock;
+
+    public IntentRouter(Clock clock) {
+        this.clock = clock;
+    }
 
     private static final Pattern UUID_PATTERN = Pattern.compile(
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
@@ -159,10 +166,10 @@ public class IntentRouter {
      */
     private Optional<LocalDate> parseDate(String value) {
         // 固定偏移
-        if (value.contains("大后天")) return Optional.of(LocalDate.now().plusDays(3));
-        if (value.contains("后天")) return Optional.of(LocalDate.now().plusDays(2));
-        if (value.contains("明天")) return Optional.of(LocalDate.now().plusDays(1));
-        if (value.contains("今天")) return Optional.of(LocalDate.now());
+        if (value.contains("大后天")) return Optional.of(LocalDate.now(clock).plusDays(3));
+        if (value.contains("后天")) return Optional.of(LocalDate.now(clock).plusDays(2));
+        if (value.contains("明天")) return Optional.of(LocalDate.now(clock).plusDays(1));
+        if (value.contains("今天")) return Optional.of(LocalDate.now(clock));
 
         // "X天后"
         var daysLaterMatcher = DAYS_LATER_PATTERN.matcher(value);
@@ -170,7 +177,7 @@ public class IntentRouter {
             try {
                 int days = Integer.parseInt(daysLaterMatcher.group(1));
                 if (days > 0 && days <= 30) {
-                    return Optional.of(LocalDate.now().plusDays(days));
+                    return Optional.of(LocalDate.now(clock).plusDays(days));
                 }
             } catch (NumberFormatException ignored) {}
         }
@@ -183,15 +190,15 @@ public class IntentRouter {
                 boolean isNextWeek = value.contains("下周");
                 boolean isThisWeek = value.contains("这周") || value.contains("本周");
                 if (isNextWeek) {
-                    return Optional.of(LocalDate.now().with(TemporalAdjusters.next(target)));
+                    return Optional.of(LocalDate.now(clock).with(TemporalAdjusters.next(target)));
                 }
                 if (isThisWeek) {
-                    LocalDate targetDate = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                    LocalDate targetDate = LocalDate.now(clock).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
                             .with(TemporalAdjusters.nextOrSame(target));
                     return Optional.of(targetDate);
                 }
                 // 无前缀的"周X"视为最近的目标日（含今天）
-                LocalDate next = LocalDate.now().with(TemporalAdjusters.nextOrSame(target));
+                LocalDate next = LocalDate.now(clock).with(TemporalAdjusters.nextOrSame(target));
                 return Optional.of(next);
             }
         }
@@ -202,10 +209,10 @@ public class IntentRouter {
             try {
                 int month = Integer.parseInt(chineseDateMatcher.group(1));
                 int day = Integer.parseInt(chineseDateMatcher.group(2));
-                int year = LocalDate.now().getYear();
+                int year = LocalDate.now(clock).getYear();
                 LocalDate parsed = LocalDate.of(year, month, day);
                 // 如果日期已过，视为明年
-                if (parsed.isBefore(LocalDate.now())) {
+                if (parsed.isBefore(LocalDate.now(clock))) {
                     parsed = LocalDate.of(year + 1, month, day);
                 }
                 return Optional.of(parsed);

@@ -1,5 +1,8 @@
 package com.medora.adk.tool;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.google.adk.tools.BaseTool;
 import com.google.adk.tools.ToolContext;
 import com.google.genai.types.FunctionDeclaration;
@@ -41,6 +44,22 @@ import java.util.Optional;
 public final class MedoraFunctionTool extends BaseTool {
 
     private static final Logger log = LoggerFactory.getLogger(MedoraFunctionTool.class);
+
+    /**
+     * 工具结果归一化用的 ObjectMapper。
+     *
+     * ADK 的 LangChain4j 桥接器有自己的内部 ObjectMapper,没有注册 JavaTimeModule,
+     * 不能序列化 {@link java.time.OffsetDateTime} 等类型(会抛 InvalidDefinitionException)。
+     * 我们在把 data 交给 ADK 之前,先用这个配好 JavaTimeModule 的 ObjectMapper 把 data
+     * 转成 JsonNode,这样 ADK 那边只需要把已经是 JSON tree 的对象重新写回字符串即可。
+     *
+     * 这里不复用 Spring 的 ObjectMapper bean,因为:
+     *  1) 只需要日期支持,其他配置(如 camelCase 命名策略)反而可能与 ADK 期望不一致
+     *  2) 单测里直接 new MedoraFunctionTool(def, desc) 也能拿到正确配置,不依赖 Spring 容器
+     */
+    private static final ObjectMapper RESULT_NORMALIZER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     private final ToolDefinition toolDefinition;
     private final ToolSchemaDescriptor descriptor;
@@ -109,7 +128,9 @@ public final class MedoraFunctionTool extends BaseTool {
         map.put("status", result.status());
         map.put("summary", result.summary());
         if (result.data() != null) {
-            map.put("data", result.data());
+            // 关键:转成 JsonNode 再交给 ADK,避免 OffsetDateTime 等 Java 8 时间类型
+            // 在 ADK 内部 ObjectMapper(没注册 JavaTimeModule)处抛 InvalidDefinitionException。
+            map.put("data", RESULT_NORMALIZER.valueToTree(result.data()));
         }
         if (result.errorCode() != null) {
             map.put("errorCode", result.errorCode());

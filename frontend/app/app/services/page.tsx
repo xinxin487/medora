@@ -37,7 +37,7 @@ function buildTimeline(
   for (const a of appointments) {
     items.push({
       id: a.appointmentId,
-      date: a.bookedAt,
+      date: normalizeDate(a.bookedAt),
       title: `${a.departmentName} · ${a.doctorName}`,
       detail: `${a.scheduleDate} ${formatPeriod(a.periodCode)} · 预约号 ${a.appointmentNo}`,
       status: a.status === "CONFIRMED" ? "已确认" : a.status === "CANCELLED" ? "已取消" : a.status,
@@ -49,7 +49,7 @@ function buildTimeline(
   for (const c of conversations) {
     items.push({
       id: c.conversationId,
-      date: c.lastMessageAt ?? "",
+      date: normalizeDate(c.lastMessageAt),
       title: c.title ?? "导诊会话",
       detail: c.status === "ACTIVE" ? "进行中" : "已结束",
       status: c.status === "ACTIVE" ? "进行中" : "已结束",
@@ -58,8 +58,27 @@ function buildTimeline(
     });
   }
 
-  items.sort((a, b) => b.date.localeCompare(a.date));
+  items.sort((a, b) => {
+    const left = b.date;
+    const right = a.date;
+    if (typeof left !== "string" || typeof right !== "string") {
+      return String(left ?? "").localeCompare(String(right ?? ""));
+    }
+    return left.localeCompare(right);
+  });
   return items;
+}
+
+function normalizeDate(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    const [y, m, d, hh = 0, mm = 0, ss = 0] = value as number[];
+    if (y == null) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${y}-${pad(m)}-${pad(d)}T${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+  }
+  return String(value);
 }
 
 export default function ServicesPage() {

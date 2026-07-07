@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -75,5 +76,12 @@ public class ConversationController {
         boolean stopped = chatRuntimeService.stopStream(conversationId);
         return ApiResponse.success(new StopConversationResponse(
                 stopped ? "STREAM_STOPPED" : "NO_ACTIVE_STREAM"));
+    }
+
+    @Operation(summary = "删除会话", description = "软删除:将会话状态置为 DELETED,不在列表中展示,但保留审计 trace")
+    @DeleteMapping("/{conversationId}")
+    public ApiResponse<Void> delete(@Parameter(description = "会话 ID") @PathVariable String conversationId) {
+        conversationService.delete(conversationId);
+        return ApiResponse.success(null);
     }
 }

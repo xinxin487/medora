@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
@@ -40,6 +41,7 @@ public class AppointmentCommandService {
     private final AppointmentOperationLogRepository operationLogRepository;
     private final AuditLogService auditLogService;
     private final MedoraMetricsService medoraMetricsService;
+    private final Clock clock;
 
     public AppointmentCommandService(CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider,
                                      UserAccountRepository userAccountRepository,
@@ -47,7 +49,8 @@ public class AppointmentCommandService {
                                      AppointmentRepository appointmentRepository,
                                      AppointmentOperationLogRepository operationLogRepository,
                                      AuditLogService auditLogService,
-                                     MedoraMetricsService medoraMetricsService) {
+                                     MedoraMetricsService medoraMetricsService,
+                                     Clock clock) {
         this.currentAuthenticatedUserProvider = currentAuthenticatedUserProvider;
         this.userAccountRepository = userAccountRepository;
         this.scheduleSlotRepository = scheduleSlotRepository;
@@ -55,6 +58,7 @@ public class AppointmentCommandService {
         this.operationLogRepository = operationLogRepository;
         this.auditLogService = auditLogService;
         this.medoraMetricsService = medoraMetricsService;
+        this.clock = clock;
     }
 
     @Transactional
@@ -235,7 +239,7 @@ public class AppointmentCommandService {
     }
 
     private String generateAppointmentNo() {
-        return "APT" + LocalDate.now().format(DATE_FORMATTER)
+        return "APT" + LocalDate.now(clock).format(DATE_FORMATTER)
                 + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
     }
 }
