@@ -1,0 +1,19 @@
+scenarios:
+  routing-001:
+    reply: 建议挂神经内科。如果您有咳嗽症状,也可以先咨询呼吸内科医生。
+    transferChain: [root_router_agent, triage_agent]
+    toolEvents: []
+    hallucinationRisk: LOW
+    latencyMs: 250
+  routing-002:
+    reply: 好的,正在为您查询明天上午呼吸内科的号源。
+    transferChain: [root_router_agent, booking_agent]
+    toolEvents: []
+    hallucinationRisk: LOW
+    latencyMs: 280
+  routing-003:
+    reply: 高血压的日常注意事项包括低盐饮食、规律运动、按时服药、定期监测血压。
+    transferChain: [root_router_agent, knowledge_agent]
+    toolEvents: []
+    hallucinationRisk: LOW
+    latencyMs: 300

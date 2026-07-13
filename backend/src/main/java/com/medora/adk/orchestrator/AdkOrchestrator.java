@@ -7,7 +7,6 @@ import com.google.adk.runner.Runner;
 import com.google.adk.sessions.BaseSessionService;
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
-import com.medora.adk.config.AdkProperties;
 import com.medora.adk.sse.AdkEventToSseAdapter;
 import com.medora.adk.sse.AdkStreamResult;
 import com.medora.adk.tool.AdkToolContextResolver;
@@ -17,10 +16,10 @@ import com.medora.agent.application.IntentDecision;
 import com.medora.agent.application.RouteMode;
 import com.medora.chat.domain.ConversationEntity;
 import com.medora.chat.repository.ConversationRepository;
+import com.medora.common.metrics.MedoraMetricsService;
 import io.reactivex.rxjava3.core.Flowable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -32,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * ADK Orchestrator — 灰度接入路径。
+ * ADK Orchestrator — Phase 9.8 起为唯一执行路径。
  *
  * 职责:
  *  1) 从 AgentChatCommand 构造 user Content
@@ -40,43 +39,44 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *  3) 订阅 Flowable&lt;Event&gt;,经 AdkEventToSseAdapter 实时翻译为 SSE 推送
  *  4) 订阅结束后,用 AdkStreamResult 构造 AgentRunResult 返回
  *
- * Phase 9.6:同步收集所有 Event(整段一次性推送)
- * Phase 9.7:改为通过 AdkEventToSseAdapter 逐事件 SSE 推送 + 聚合 trace 字段
+ * <p>历史:
+ * <ul>
+ *   <li>Phase 9.6:同步收集所有 Event(整段一次性推送)</li>
+ *   <li>Phase 9.7:改为通过 AdkEventToSseAdapter 逐事件 SSE 推送 + 聚合 trace 字段</li>
+ *   <li>Phase 9.8:移除灰度开关,成为唯一 orchestrator</li>
+ * </ul>
  *
  * Session 复用:
  *  - sessionId = conversation.publicId(从 Long id 查 ConversationEntity 得到 UUID)
  *  - 每次请求都通过 createSession 写入 per-request state keys
  *    (userAccountId/userMessage/traceId)。详见 ensureSession 注释。
  *
- * 灰度策略:
- *  ChatOrchestrator 入口判断 adkProperties.enabled,委托给本类。
- *  本类不重复判断 intent,统一交给 RootRouterAgent 内部 LLM 路由。
+ * 路由策略:本类不重复判断 intent,统一交给 RootRouterAgent 内部 LLM 路由。
  */
 @Component
-@ConditionalOnProperty(prefix = "medora.adk", name = "enabled", havingValue = "true")
 public class AdkOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(AdkOrchestrator.class);
 
     private final Runner adkRunner;
     private final BaseSessionService sessionService;
-    private final AdkProperties adkProperties;
     private final ConversationRepository conversationRepository;
     private final AdkEventToSseAdapter sseAdapter;
     private final ObjectMapper objectMapper;
+    private final MedoraMetricsService metricsService;
 
     public AdkOrchestrator(Runner adkRunner,
                            BaseSessionService sessionService,
-                           AdkProperties adkProperties,
                            ConversationRepository conversationRepository,
                            AdkEventToSseAdapter sseAdapter,
-                           ObjectMapper objectMapper) {
+                           ObjectMapper objectMapper,
+                           MedoraMetricsService metricsService) {
         this.adkRunner = adkRunner;
         this.sessionService = sessionService;
-        this.adkProperties = adkProperties;
         this.conversationRepository = conversationRepository;
         this.sseAdapter = sseAdapter;
         this.objectMapper = objectMapper;
+        this.metricsService = metricsService;
     }
 
     /**
@@ -111,6 +111,7 @@ public class AdkOrchestrator {
                 command.conversationId(), command.traceId(), elapsed,
                 streamResult.finalReply().length(),
                 streamResult.toolEventsJson().length());
+        recordRunMetrics(streamResult, elapsed);
 
         IntentDecision decision = new IntentDecision(
                 "ADK_ROUTED",
@@ -130,6 +131,29 @@ public class AdkOrchestrator {
                 streamResult.hallucinationRisk(),
                 "[]"
         );
+    }
+
+    /**
+     * Phase 9.8 — 把单次 ADK 运行的汇总指标推到 Prometheus。
+     *
+     * 指标维度:
+     *  - hallucination risk level
+     *  - 路由深度(transferChain 大小,P50/P95 用 timer 之外的 counter 辅助)
+     *  - safety outcome(从 safetyEventsJson 判定 ALLOW/BLOCK)
+     *
+     * 工具调用粒度的指标在 AdkEventToSseAdapter 里逐事件上报(避免这里再解析一次 JSON)。
+     */
+    private void recordRunMetrics(AdkStreamResult result, long elapsedMs) {
+        try {
+            metricsService.recordHallucinationRisk("ADK", result.hallucinationRisk());
+            String safetyEvents = result.safetyEventsJson();
+            boolean hasSafetyBlock = safetyEvents != null
+                    && !safetyEvents.isBlank()
+                    && !"[]".equals(safetyEvents);
+            metricsService.recordSafetyOutcome("ADK", hasSafetyBlock ? "BLOCK" : "ALLOW");
+        } catch (RuntimeException ex) {
+            log.debug("metrics recording failed, ignored", ex);
+        }
     }
 
     private String buildToolCallJson(AdkStreamResult result) {

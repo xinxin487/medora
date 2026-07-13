@@ -3,7 +3,6 @@ package com.medora.adk.agents;
 import com.google.adk.agents.LlmAgent;
 import com.google.adk.models.langchain4j.LangChain4j;
 import com.google.adk.tools.BaseTool;
-import com.medora.adk.config.AdkProperties;
 import com.medora.adk.guard.HighRiskToolBeforeCallback;
 import com.medora.adk.guard.LlmHallucinationAfterCallback;
 import com.medora.adk.guard.LlmInputSafetyBeforeCallback;
@@ -12,14 +11,13 @@ import com.medora.adk.tool.MedoraFunctionTool;
 import com.medora.adk.tool.ToolSchemaRegistry;
 import com.medora.agent.tool.ToolNames;
 import com.medora.agent.tool.ToolRegistry;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
 
 /**
- * Phase 9.5 多 agent 拓扑定义。
+ * Phase 9.5 多 agent 拓扑定义(Phase 9.8 起为唯一加载路径)。
  *
  * RootRouterAgent(instruction-only,无业务工具)
  *   ├── TriageAgent        工具: searchKnowledge
@@ -38,13 +36,11 @@ import java.util.List;
  *  - KnowledgeAgent 用独立的 Hallucination callback,Triage/Booking 不挂(它们不答医疗知识)
  */
 @Configuration
-@ConditionalOnProperty(prefix = "medora.adk", name = "enabled", havingValue = "true")
 public class AdkAgentTopology {
 
     private final LangChain4j deepseekLlmBridge;
     private final ToolRegistry toolRegistry;
     private final ToolSchemaRegistry schemaRegistry;
-    private final AdkProperties adkProperties;
     private final LlmInputSafetyBeforeCallback inputSafety;
     private final LlmOutputSafetyAfterCallback outputSafety;
     private final HighRiskToolBeforeCallback highRiskToolGuard;
@@ -54,7 +50,6 @@ public class AdkAgentTopology {
             LangChain4j deepseekLlmBridge,
             ToolRegistry toolRegistry,
             ToolSchemaRegistry schemaRegistry,
-            AdkProperties adkProperties,
             LlmInputSafetyBeforeCallback inputSafety,
             LlmOutputSafetyAfterCallback outputSafety,
             HighRiskToolBeforeCallback highRiskToolGuard,
@@ -62,7 +57,6 @@ public class AdkAgentTopology {
         this.deepseekLlmBridge = deepseekLlmBridge;
         this.toolRegistry = toolRegistry;
         this.schemaRegistry = schemaRegistry;
-        this.adkProperties = adkProperties;
         this.inputSafety = inputSafety;
         this.outputSafety = outputSafety;
         this.highRiskToolGuard = highRiskToolGuard;

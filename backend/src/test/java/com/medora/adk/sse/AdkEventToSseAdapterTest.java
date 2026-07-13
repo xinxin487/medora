@@ -8,6 +8,7 @@ import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.Part;
 import com.medora.agent.application.AgentModelGateway;
 import com.medora.chat.sse.StreamEventPublisher;
+import com.medora.common.metrics.MedoraMetricsService;
 import io.reactivex.rxjava3.core.Flowable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -50,6 +52,7 @@ class AdkEventToSseAdapterTest {
 
     private StreamEventPublisher publisher;
     private AgentModelGateway agentModelGateway;
+    private MedoraMetricsService metricsService;
     private AdkEventToSseAdapter adapter;
     private SseEmitter emitter;
 
@@ -57,9 +60,10 @@ class AdkEventToSseAdapterTest {
     void setUp() throws IOException {
         publisher = mock(StreamEventPublisher.class);
         agentModelGateway = mock(AgentModelGateway.class);
+        metricsService = mock(MedoraMetricsService.class);
         // 默认让 LLM 调用返回空,触发模板兜底;个别测试需要 LLM 时再 stub
         when(agentModelGateway.lightweightLlmCall(anyString(), anyString())).thenReturn(Optional.empty());
-        adapter = new AdkEventToSseAdapter(publisher, new ObjectMapper(), agentModelGateway);
+        adapter = new AdkEventToSseAdapter(publisher, new ObjectMapper(), agentModelGateway, metricsService);
         emitter = mock(SseEmitter.class);
     }
 
@@ -328,5 +332,27 @@ class AdkEventToSseAdapterTest {
 
         assertThat(result.finalReply()).startsWith("已完成:");
         assertThat(result.finalReply()).contains("3 个医生");
+    }
+
+    /**
+     * Phase 10 W4.5 — null emitter 路径(评测 live 模式 + orchestrateOneShot 调试入口)。
+     *
+     * <p>不能 NPE、不能调 publisher.publishDelta / publishToolStatus,
+     * 但要把 reply / toolEvents / transferChain 正常累积到 AdkStreamResult。
+     */
+    @Test
+    void streamToleratesNullEmitterForEvalAndOneShot() throws IOException {
+        Flowable<Event> events = Flowable.just(
+                textEvent("你好"),
+                functionCallEvent("queryDepartments", "c1", Map.of("keyword", "呼吸")),
+                functionResponseEvent("queryDepartments", "c1", Map.of("summary", "呼吸内科"))
+        );
+
+        AdkStreamResult result = adapter.stream(events, null, new AtomicBoolean(false));
+
+        assertThat(result.finalReply()).isEqualTo("你好");
+        assertThat(result.toolEventsJson()).contains("queryDepartments");
+        // 关键:publisher 永远没被调用,因为 emitter == null
+        verifyNoInteractions(publisher);
     }
 }

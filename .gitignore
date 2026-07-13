@@ -34,3 +34,6 @@ frontend/coverage/
 # Misc
 *.tmp
 *.swp
+
+# Claude Code local settings (个人偏好,不进 git)
+.claude/settings.local.json

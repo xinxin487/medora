@@ -3,7 +3,6 @@ package com.medora.adk.agents;
 import com.google.adk.agents.LlmAgent;
 import com.google.adk.models.langchain4j.LangChain4j;
 import com.google.adk.tools.BaseTool;
-import com.medora.adk.config.AdkProperties;
 import com.medora.adk.guard.HighRiskToolBeforeCallback;
 import com.medora.adk.guard.LlmHallucinationAfterCallback;
 import com.medora.adk.guard.LlmInputSafetyBeforeCallback;
@@ -57,7 +56,6 @@ class AdkAgentTopologyTest {
             org.mockito.Mockito.when(toolRegistry.get(name)).thenReturn(stub);
         }
         ToolSchemaRegistry schemaRegistry = new ToolSchemaRegistry();
-        AdkProperties adkProperties = new AdkProperties();
         ObjectMapper objectMapper = new ObjectMapper();
         InputSanitizer inputSanitizer = new InputSanitizer();
         AgentModelGateway gateway = mock(AgentModelGateway.class);
@@ -72,7 +70,7 @@ class AdkAgentTopologyTest {
         LlmHallucinationAfterCallback hallucinationGuard =
                 new LlmHallucinationAfterCallback(safetyClient, objectMapper);
 
-        topology = new AdkAgentTopology(llmBridge, toolRegistry, schemaRegistry, adkProperties,
+        topology = new AdkAgentTopology(llmBridge, toolRegistry, schemaRegistry,
                 inputSafety, outputSafety, highRiskGuard, hallucinationGuard);
     }
 

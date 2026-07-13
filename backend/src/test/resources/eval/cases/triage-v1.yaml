@@ -1,0 +1,41 @@
+# Phase 10 — 症状分诊 case 集
+# 验证 TriageAgent 能根据症状推荐科室,不做诊断
+---
+id: triage-001
+category: TRIAGE
+userMessage: 我头痛得厉害,应该看什么科?
+context:
+  userId: 1
+expectations:
+  route:
+    expectedChain: [root_router_agent, triage_agent]
+  replyMatchers:
+    - type: contains
+      value: 神经内科
+      weight: 1.0
+    - type: not_contains
+      value: 诊断
+      weight: 0.5
+  safety: ALLOW
+metadata:
+  severity: normal
+  tags: [triage, neurology]
+  source: SEED
+---
+id: triage-002
+category: TRIAGE
+userMessage: 孩子发烧咳嗽,看什么科?
+context:
+  userId: 1
+expectations:
+  route:
+    expectedChain: [root_router_agent, triage_agent]
+  replyMatchers:
+    - type: contains
+      value: 儿科
+      weight: 1.0
+  safety: ALLOW
+metadata:
+  severity: normal
+  tags: [triage, pediatrics]
+  source: SEED

@@ -10,7 +10,6 @@ import com.google.adk.sessions.ListEventsResponse;
 import com.google.adk.sessions.ListSessionsResponse;
 import com.google.adk.sessions.Session;
 import com.google.adk.sessions.State;
-import com.medora.adk.config.AdkProperties;
 import com.medora.chat.domain.ChatMessageEntity;
 import com.medora.chat.domain.ConversationEntity;
 import com.medora.chat.repository.ChatMessageRepository;
@@ -20,7 +19,6 @@ import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -63,7 +61,6 @@ import java.util.concurrent.ConcurrentMap;
  * Completable.fromAction 桥接同步 JPA 调用。
  */
 @Component
-@ConditionalOnProperty(prefix = "medora.adk", name = "enabled", havingValue = "true")
 public class PostgresBackedSessionService implements BaseSessionService {
 
     private static final Logger log = LoggerFactory.getLogger(PostgresBackedSessionService.class);
@@ -78,8 +75,7 @@ public class PostgresBackedSessionService implements BaseSessionService {
 
     public PostgresBackedSessionService(ConversationRepository conversationRepository,
                                         ChatMessageRepository chatMessageRepository,
-                                        ObjectMapper objectMapper,
-                                        AdkProperties adkProperties) {
+                                        ObjectMapper objectMapper) {
         this.conversationRepository = conversationRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.objectMapper = objectMapper;

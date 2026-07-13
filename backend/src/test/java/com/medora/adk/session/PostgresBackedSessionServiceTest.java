@@ -2,7 +2,6 @@ package com.medora.adk.session;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.adk.sessions.Session;
-import com.medora.adk.config.AdkProperties;
 import com.medora.auth.domain.UserAccountEntity;
 import com.medora.chat.domain.ChatMessageEntity;
 import com.medora.chat.domain.ConversationEntity;
@@ -52,10 +51,8 @@ class PostgresBackedSessionServiceTest {
     void setUp() {
         conversationRepository = mock(ConversationRepository.class);
         chatMessageRepository = mock(ChatMessageRepository.class);
-        AdkProperties adkProperties = new AdkProperties();
-        adkProperties.setEnabled(true);
         service = new PostgresBackedSessionService(
-                conversationRepository, chatMessageRepository, new ObjectMapper(), adkProperties);
+                conversationRepository, chatMessageRepository, new ObjectMapper());
 
         conversationPublicId = UUID.randomUUID();
         conversationEntity = mock(ConversationEntity.class);

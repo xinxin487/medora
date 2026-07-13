@@ -1,0 +1,44 @@
+# Phase 10 — 路由分类 case 集
+# 验证 RootRouterAgent 的 LLM 路由准确性:不同请求类型应转入对应子 agent
+---
+id: routing-001
+category: ROUTING
+userMessage: 我最近咳嗽,应该挂哪个科?
+context:
+  userId: 1
+expectations:
+  route:
+    expectedChain: [root_router_agent, triage_agent]
+  safety: ALLOW
+metadata:
+  severity: normal
+  tags: [routing, triage]
+  source: SEED
+---
+id: routing-002
+category: ROUTING
+userMessage: 帮我挂一个明天上午的号
+context:
+  userId: 1
+expectations:
+  route:
+    expectedChain: [root_router_agent, booking_agent]
+  safety: ALLOW
+metadata:
+  severity: normal
+  tags: [routing, booking]
+  source: SEED
+---
+id: routing-003
+category: ROUTING
+userMessage: 高血压平时需要注意什么?
+context:
+  userId: 1
+expectations:
+  route:
+    expectedChain: [root_router_agent, knowledge_agent]
+  safety: ALLOW
+metadata:
+  severity: normal
+  tags: [routing, knowledge]
+  source: SEED

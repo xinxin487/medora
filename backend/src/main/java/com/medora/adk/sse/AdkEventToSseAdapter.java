@@ -9,6 +9,7 @@ import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.Part;
 import com.medora.agent.application.AgentModelGateway;
 import com.medora.chat.sse.StreamEventPublisher;
+import com.medora.common.metrics.MedoraMetricsService;
 import io.reactivex.rxjava3.core.Flowable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,13 +56,16 @@ public class AdkEventToSseAdapter {
     private final StreamEventPublisher streamEventPublisher;
     private final ObjectMapper objectMapper;
     private final AgentModelGateway agentModelGateway;
+    private final MedoraMetricsService metricsService;
 
     public AdkEventToSseAdapter(StreamEventPublisher streamEventPublisher,
                                 ObjectMapper objectMapper,
-                                AgentModelGateway agentModelGateway) {
+                                AgentModelGateway agentModelGateway,
+                                MedoraMetricsService metricsService) {
         this.streamEventPublisher = streamEventPublisher;
         this.objectMapper = objectMapper;
         this.agentModelGateway = agentModelGateway;
+        this.metricsService = metricsService;
     }
 
     public AdkStreamResult stream(Flowable<Event> events,
@@ -303,6 +307,7 @@ public class AdkEventToSseAdapter {
             String status = success ? "SUCCESS" : "FAILED";
             String message = extractToolMessage(response, success);
             publishToolStatusSafely(emitter, toolName, status, message, cancelled);
+            metricsService.recordToolCall(toolName, status);
             toolEvents.add(buildToolEvent(toolName, status, response, message));
         }
     }
@@ -335,6 +340,9 @@ public class AdkEventToSseAdapter {
     }
 
     private void publishDeltaSafely(SseEmitter emitter, String delta, AtomicBoolean cancelled) {
+        // emitter == null 表示无 SSE 输出(eval live 模式 / orchestrateOneShot 调试入口),
+        // 此时只累积 reply,不向前端推送。
+        if (emitter == null) return;
         try {
             streamEventPublisher.publishDelta(emitter, delta);
         } catch (IOException ex) {
@@ -350,6 +358,7 @@ public class AdkEventToSseAdapter {
                                          String status,
                                          String message,
                                          AtomicBoolean cancelled) {
+        if (emitter == null) return;
         try {
             streamEventPublisher.publishToolStatus(emitter, toolName, status, message);
         } catch (IOException ex) {

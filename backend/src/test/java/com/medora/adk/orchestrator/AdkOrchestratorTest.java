@@ -5,7 +5,6 @@ import com.google.adk.runner.Runner;
 import com.google.adk.sessions.BaseSessionService;
 import com.google.adk.sessions.Session;
 import com.google.genai.types.Content;
-import com.medora.adk.config.AdkProperties;
 import com.medora.adk.sse.AdkEventToSseAdapter;
 import com.medora.adk.sse.AdkStreamResult;
 import com.medora.adk.tool.AdkToolContextResolver;
@@ -13,6 +12,7 @@ import com.medora.agent.application.AgentChatCommand;
 import com.medora.agent.application.AgentRunResult;
 import com.medora.chat.domain.ConversationEntity;
 import com.medora.chat.repository.ConversationRepository;
+import com.medora.common.metrics.MedoraMetricsService;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
@@ -53,9 +53,9 @@ class AdkOrchestratorTest {
 
     private Runner runner;
     private BaseSessionService sessionService;
-    private AdkProperties adkProperties;
     private ConversationRepository conversationRepository;
     private AdkEventToSseAdapter sseAdapter;
+    private MedoraMetricsService metricsService;
     private AdkOrchestrator orchestrator;
 
     private static final Long USER_ID = 100L;
@@ -68,13 +68,12 @@ class AdkOrchestratorTest {
     void setUp() {
         runner = mock(Runner.class);
         sessionService = mock(BaseSessionService.class);
-        adkProperties = new AdkProperties();
-        adkProperties.setEnabled(true);
         conversationRepository = mock(ConversationRepository.class);
         sseAdapter = mock(AdkEventToSseAdapter.class);
+        metricsService = mock(MedoraMetricsService.class);
         orchestrator = new AdkOrchestrator(
-                runner, sessionService, adkProperties, conversationRepository,
-                sseAdapter, new ObjectMapper());
+                runner, sessionService, conversationRepository,
+                sseAdapter, new ObjectMapper(), metricsService);
 
         when(runner.appName()).thenReturn("medora");
         ConversationEntity conversation = mock(ConversationEntity.class);
@@ -270,5 +269,86 @@ class AdkOrchestratorTest {
         assertThat(result.toolCallJson())
                 .contains("\"transferChain\":[\"root_router_agent\",\"booking_agent\"]");
         assertThat(result.hallucinationRisk()).isEqualTo("HIGH");
+    }
+
+    /**
+     * Phase 9.8 — 验证多跳 transfer 链路正确写入 toolCallJson。
+     *
+     * 场景:RootRouterAgent 收到"我咳嗽应挂什么科",transfer 到 TriageAgent 做症状分诊,
+     * TriageAgent 内部 searchKnowledge 后再 transfer 到 BookingAgent 完成挂号建议。
+     * 这种多跳场景比单跳(root → booking)更容易暴露 transferChain 累积 bug。
+     */
+    @Test
+    void orchestrateHandlesMultiHopTransferChainRootToTriageToBooking() {
+        mockSessionMissing();
+        when(sessionService.createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString()))
+                .thenReturn(Single.just(mock(Session.class)));
+        mockRunnerFlowable();
+        AdkStreamResult stub = new AdkStreamResult(
+                "已为您找到呼吸科号源",
+                "[{\"toolName\":\"queryDepartments\",\"status\":\"SUCCESS\"},"
+                        + "{\"toolName\":\"queryScheduleSlots\",\"status\":\"SUCCESS\"}]",
+                "[]",
+                "MEDIUM",
+                List.of("root_router_agent", "triage_agent", "booking_agent")
+        );
+        when(sseAdapter.stream(any(), any(), any())).thenReturn(stub);
+
+        AgentRunResult result = orchestrator.orchestrate(command(), null, new AtomicBoolean(false));
+
+        assertThat(result.toolCallJson())
+                .contains("\"transferChain\":[\"root_router_agent\",\"triage_agent\",\"booking_agent\"]");
+        assertThat(result.toolCallJson()).contains("queryScheduleSlots");
+        assertThat(result.hallucinationRisk()).isEqualTo("MEDIUM");
+    }
+
+    /**
+     * Phase 9.8 — 验证 metrics 正常上报。
+     * hallucinationRisk=HIGH + safetyEvents 为空 → recordHallucinationRisk("ADK", "HIGH") + recordSafetyOutcome("ADK", "ALLOW")。
+     */
+    @Test
+    void orchestrateRecordsHallucinationAndSafetyMetrics() {
+        mockSessionMissing();
+        when(sessionService.createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString()))
+                .thenReturn(Single.just(mock(Session.class)));
+        mockRunnerFlowable();
+        AdkStreamResult stub = new AdkStreamResult(
+                "reply",
+                "[]",
+                "[]",
+                "HIGH",
+                List.of("root_router_agent", "triage_agent")
+        );
+        when(sseAdapter.stream(any(), any(), any())).thenReturn(stub);
+
+        orchestrator.orchestrate(command(), null, new AtomicBoolean(false));
+
+        verify(metricsService).recordHallucinationRisk("ADK", "HIGH");
+        verify(metricsService).recordSafetyOutcome("ADK", "ALLOW");
+    }
+
+    /**
+     * Phase 9.8 — 验证 safety 拦截场景下 metrics 上报 BLOCK。
+     * safetyEventsJson 非空时表示 LLM callback 触发了安全审查事件(如 inputSafetyBeforeCallback 拒绝)。
+     */
+    @Test
+    void orchestrateRecordsSafetyBlockMetricWhenSafetyEventsPresent() {
+        mockSessionMissing();
+        when(sessionService.createSession(anyString(), anyString(), any(ConcurrentMap.class), anyString()))
+                .thenReturn(Single.just(mock(Session.class)));
+        mockRunnerFlowable();
+        AdkStreamResult stub = new AdkStreamResult(
+                "抱歉,该问题已触发安全策略",
+                "[]",
+                "[{\"type\":\"SAFETY_BLOCKED\",\"reason\":\"prompt injection detected\"}]",
+                "LOW",
+                List.of("root_router_agent")
+        );
+        when(sseAdapter.stream(any(), any(), any())).thenReturn(stub);
+
+        orchestrator.orchestrate(command(), null, new AtomicBoolean(false));
+
+        verify(metricsService).recordSafetyOutcome("ADK", "BLOCK");
+        verify(metricsService).recordHallucinationRisk("ADK", "LOW");
     }
 }

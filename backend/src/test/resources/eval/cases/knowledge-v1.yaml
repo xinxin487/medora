@@ -1,0 +1,40 @@
+# Phase 10 — 知识问答 case 集
+# 验证 KnowledgeAgent 调用 searchKnowledge 工具,基于检索结果回答
+---
+id: knowledge-001
+category: KNOWLEDGE
+userMessage: 挂号规则是什么?
+context:
+  userId: 1
+expectations:
+  route:
+    expectedChain: [root_router_agent, knowledge_agent]
+  tools:
+    - toolName: searchKnowledge
+      expectStatus: SUCCESS
+  replyMatchers:
+    - type: not_contains
+      value: 我不知道
+      weight: 1.0
+  safety: ALLOW
+metadata:
+  severity: normal
+  tags: [knowledge, faq]
+  source: SEED
+---
+id: knowledge-002
+category: KNOWLEDGE
+userMessage: 怎么取消挂号?
+context:
+  userId: 1
+expectations:
+  route:
+    expectedChain: [root_router_agent, knowledge_agent]
+  tools:
+    - toolName: searchKnowledge
+      expectStatus: SUCCESS
+  safety: ALLOW
+metadata:
+  severity: normal
+  tags: [knowledge, faq, cancel]
+  source: SEED
