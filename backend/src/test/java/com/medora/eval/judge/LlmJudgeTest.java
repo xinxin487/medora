@@ -153,6 +153,91 @@ class LlmJudgeTest {
         assertThat(capturedUser.toString()).contains("额外评分标准");
     }
 
+    @Test
+    void multiSampleStableResponseAggregatesWithNoUnstableMarker() {
+        // 3 次相同响应,median=0.915, std=0 → 不标 unstable
+        String json = "{\"accuracy\":0.9,\"conciseness\":0.9,\"helpfulness\":0.9,\"harmlessness\":1.0,\"reasoning\":\"stable\"}";
+        LlmJudge judge = new LlmJudge(new StubLlmClient(json), 3, 0.15);
+        EvalRun.Score s = judge.score(caseWithLlmJudge("c", null), behavior("r"));
+
+        assertThat(s.pass()).isTrue();
+        assertThat(s.score()).isCloseTo(0.915, org.assertj.core.data.Offset.offset(0.001));
+        assertThat(s.reasoning()).contains("samples=3").contains("median=").contains("std=0.00");
+        assertThat(s.reasoning()).doesNotContain("[unstable:");
+    }
+
+    @Test
+    void highVarianceAcrossSamplesMarkedUnstable() {
+        // overall 0.915 / 0.575 / 0.9925 → median=0.915, std≈0.175 > 0.15 → 标 unstable
+        LlmClient variable = variableLlmClient(
+                "{\"accuracy\":0.9,\"conciseness\":0.9,\"helpfulness\":0.9,\"harmlessness\":1.0,\"reasoning\":\"a\"}",
+                "{\"accuracy\":0.5,\"conciseness\":0.5,\"helpfulness\":0.5,\"harmlessness\":1.0,\"reasoning\":\"b\"}",
+                "{\"accuracy\":0.99,\"conciseness\":0.99,\"helpfulness\":1.0,\"harmlessness\":1.0,\"reasoning\":\"c\"}"
+        );
+        LlmJudge judge = new LlmJudge(variable, 3, 0.15);
+        EvalRun.Score s = judge.score(caseWithLlmJudge("c", null), behavior("r"));
+
+        // median = 0.915 → pass,但 std 高 → unstable 标记
+        assertThat(s.pass()).isTrue();
+        assertThat(s.reasoning()).contains("[unstable:").contains("std=");
+    }
+
+    @Test
+    void medianBelowThresholdFailsEvenIfOneSampleHigh() {
+        // 0.99 / 0.4 / 0.45 → median=0.45, pass=false
+        LlmClient variable = variableLlmClient(
+                "{\"accuracy\":0.99,\"conciseness\":0.99,\"helpfulness\":1.0,\"harmlessness\":1.0,\"reasoning\":\"a\"}",
+                "{\"accuracy\":0.4,\"conciseness\":0.4,\"helpfulness\":0.4,\"harmlessness\":1.0,\"reasoning\":\"b\"}",
+                "{\"accuracy\":0.45,\"conciseness\":0.45,\"helpfulness\":0.45,\"harmlessness\":1.0,\"reasoning\":\"c\"}"
+        );
+        LlmJudge judge = new LlmJudge(variable, 0.7, 3, 0.15);
+        EvalRun.Score s = judge.score(caseWithLlmJudge("c", null), behavior("r"));
+
+        assertThat(s.pass()).isFalse();
+        assertThat(s.reasoning()).contains("samples=3");
+    }
+
+    @Test
+    void multiSampleShortCircuitsOnLlmFailure() {
+        // 第 2 次调用抛异常 → 立即 fail,reasoning 含 "sample 2/3"
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        LlmClient partialFailure = new LlmClient() {
+            @Override public String complete(String s, String u) {
+                int n = calls.incrementAndGet();
+                if (n == 2) throw new RuntimeException("transient");
+                return "{\"accuracy\":1.0,\"conciseness\":1.0,\"helpfulness\":1.0,\"harmlessness\":1.0,\"reasoning\":\"\"}";
+            }
+            @Override public String describe() { return "partial-fail"; }
+        };
+        LlmJudge judge = new LlmJudge(partialFailure, 3, 0.15);
+        EvalRun.Score s = judge.score(caseWithLlmJudge("c", null), behavior("r"));
+
+        assertThat(s.pass()).isFalse();
+        assertThat(s.reasoning()).contains("sample 2/3").contains("transient");
+    }
+
+    @Test
+    void samplesMustBePositive() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        new LlmJudge(new StubLlmClient("{}"), 0, 0.15))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("samples");
+    }
+
+    private static LlmClient variableLlmClient(String... responsesInOrder) {
+        java.util.concurrent.atomic.AtomicInteger idx = new java.util.concurrent.atomic.AtomicInteger();
+        return new LlmClient() {
+            @Override public String complete(String s, String u) {
+                int i = idx.getAndIncrement();
+                if (i >= responsesInOrder.length) {
+                    throw new IllegalStateException("variableLlmClient exhausted: call #" + (i + 1));
+                }
+                return responsesInOrder[i];
+            }
+            @Override public String describe() { return "variable"; }
+        };
+    }
+
     private static TestCase caseWithLlmJudge(String id, String rubric) {
         return new TestCase(
                 id, TestCase.Category.SAFETY, "user msg",

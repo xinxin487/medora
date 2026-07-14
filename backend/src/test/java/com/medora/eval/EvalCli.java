@@ -7,6 +7,9 @@ import com.medora.auth.repository.UserAccountRepository;
 import com.medora.chat.repository.ConversationRepository;
 import com.medora.eval.domain.EvalRun;
 import com.medora.eval.domain.TestCase;
+import com.medora.eval.gen.AdversarialCaseGenerator;
+import com.medora.eval.gen.GeneratedCaseYamlWriter;
+import com.medora.eval.gen.SeedTemplates;
 import com.medora.eval.judge.Judge;
 import com.medora.eval.judge.LlmJudge;
 import com.medora.eval.judge.ReplyMatcherJudge;
@@ -99,6 +102,9 @@ public class EvalCli {
             printHelp();
             return 0;
         }
+        if (opts.containsKey("generate")) {
+            return runGenerate(opts);
+        }
         String casesPath = opts.getOrDefault("cases", "src/test/resources/eval/cases");
         String reportDir = opts.getOrDefault("report-dir", "target/eval/latest");
         String mode = opts.getOrDefault("mode", "stub");
@@ -106,9 +112,11 @@ public class EvalCli {
         String scenarios = opts.get("scenarios");
         double threshold = parseDouble(opts.get("threshold"), 1.0);
         String category = opts.get("category");
+        int samples = parseInt(opts.get("samples"), 1);
+        double stabilityThreshold = parseDouble(opts.get("stability-threshold"), 0.15);
 
-        log.info("EvalCli starting. cases={}, report-dir={}, mode={}, threshold={}",
-                casesPath, reportDir, mode, threshold);
+        log.info("EvalCli starting. cases={}, report-dir={}, mode={}, threshold={}, samples={}, stabilityThreshold={}",
+                casesPath, reportDir, mode, threshold, samples, stabilityThreshold);
 
         AdkHarness harness;
         List<Judge> judges = new ArrayList<>(List.of(
@@ -138,8 +146,9 @@ public class EvalCli {
                     log.error("failed to load recordings from {}", recordings, ex);
                     return 2;
                 }
-                judges.add(new LlmJudge(replaying));
-                log.info("LlmJudge enabled (replay from {})", recordings);
+                judges.add(new LlmJudge(replaying, samples, stabilityThreshold));
+                log.info("LlmJudge enabled (replay from {}, samples={}, stabilityThreshold={})",
+                        recordings, samples, stabilityThreshold);
                 harness = scenarios != null ? loadScenariosOrDefault(scenarios) : StubAdkHarness.constant(EvalRun.ActualBehavior.empty());
             }
             case "live" -> {
@@ -153,8 +162,9 @@ public class EvalCli {
                 if (recorder == null) {
                     return 2;
                 }
-                judges.add(new LlmJudge(recorder));
-                log.info("LlmJudge enabled (record mode, client={})", recorder.describe());
+                judges.add(new LlmJudge(recorder, samples, stabilityThreshold));
+                log.info("LlmJudge enabled (record mode, client={}, samples={}, stabilityThreshold={})",
+                        recorder.describe(), samples, stabilityThreshold);
                 harness = scenarios != null ? loadScenariosOrDefault(scenarios) : StubAdkHarness.constant(EvalRun.ActualBehavior.empty());
             }
             default -> {
@@ -196,6 +206,93 @@ public class EvalCli {
                 agg.passed(), agg.totalCases(), agg.errored());
 
         return agg.passRate() >= threshold ? 0 : 1;
+    }
+
+    /**
+     * W5.6 — {@code --generate} 子命令:跑 AdversarialCaseGenerator 把对抗 case 写到 YAML 文件。
+     *
+     * <p>用法:
+     * <pre>
+     * # record 模式:真实 LLM 调用 + 录制(开发者本地,需 AI_CHAT_API_KEY)
+     * EvalCli --generate --mode record --out target/eval/gen.yaml
+     *
+     * # replay 模式:从已有 recordings 回放(CI 友好,但 recordings 要覆盖 generator prompt)
+     * EvalCli --generate --mode replay --recordings path/to/gen-recordings.json --out target/eval/gen.yaml
+     *
+     * # 只生成某 category 的 seeds
+     * EvalCli --generate --mode record --category triage --out ...
+     * </pre>
+     *
+     * <p>退出码:
+     * <ul>
+     *   <li>0 = 至少生成 1 个 case 并写入</li>
+     *   <li>1 = 没生成任何 case(LLM 全失败或 replay 全 miss)</li>
+     *   <li>2 = 参数错误 / 文件 IO 错误</li>
+     * </ul>
+     *
+     * <p>生成结果 <b>不能直接入库</b>:输出文件默认在 target/ 下,reviewer 编辑 expectations(route/tools)
+     * 后才能放到 src/test/resources/eval/cases/。
+     */
+    private int runGenerate(Map<String, String> opts) {
+        String mode = opts.getOrDefault("mode", "stub");
+        String recordings = opts.get("recordings");
+        String category = opts.get("category");
+        String out = opts.getOrDefault("out", "target/eval/generated-cases.yaml");
+
+        LlmClient client;
+        switch (mode.toLowerCase()) {
+            case "replay" -> {
+                if (recordings == null) {
+                    System.err.println("ERROR: --generate --mode=replay requires --recordings <path>");
+                    return 2;
+                }
+                try {
+                    client = new ReplayingLlmClient(new LlmRecorderStore(Paths.get(recordings)));
+                } catch (Exception ex) {
+                    log.error("failed to load recordings from {}", recordings, ex);
+                    return 2;
+                }
+            }
+            case "record" -> {
+                client = bootstrapRecordingClient(recordings);
+                if (client == null) {
+                    return 2;
+                }
+            }
+            default -> {
+                System.err.println("ERROR: --generate requires --mode record or --mode replay, got: " + mode);
+                return 2;
+            }
+        }
+        log.info("generate mode: client={}, out={}", client.describe(), out);
+
+        List<SeedTemplates.Seed> seeds = SeedTemplates.defaultSeeds();
+        if (category != null && !category.isBlank()) {
+            String want = category.toUpperCase();
+            seeds = seeds.stream().filter(s -> s.category().name().equals(want)).toList();
+            if (seeds.isEmpty()) {
+                System.err.println("ERROR: no seeds match --category " + category
+                        + " (valid: TRIAGE/BOOKING/KNOWLEDGE/SAFETY)");
+                return 2;
+            }
+        }
+        List<SeedTemplates.Mutation> mutations = SeedTemplates.defaultMutations();
+
+        List<TestCase> generated = new AdversarialCaseGenerator(client).generateAll(seeds, mutations);
+        if (generated.isEmpty()) {
+            System.err.println("ERROR: generated 0 cases — all LLM calls failed (check client log above)");
+            return 1;
+        }
+
+        try {
+            new GeneratedCaseYamlWriter().writeMultiDoc(generated, Paths.get(out));
+            log.info("wrote {} adversarial cases to {} (reviewer needs to fill expectations.route/tools)",
+                    generated.size(), out);
+        } catch (Exception ex) {
+            log.error("failed to write generated cases to {}", out, ex);
+            return 2;
+        }
+        return 0;
     }
 
     /**
@@ -285,22 +382,35 @@ public class EvalCli {
         log.info("reports written: {} and {}", json, md);
     }
 
+    private static final java.util.Set<String> BOOLEAN_FLAGS = java.util.Set.of("help", "generate", "h");
+
     private Map<String, String> parseArgs(String[] args) {
         Map<String, String> opts = new LinkedHashMap<>();
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
-            if ("--help".equals(a) || "-h".equals(a)) {
+            if ("-h".equals(a)) {
+                opts.put("help", "true");
+                continue;
+            }
+            if ("--help".equals(a)) {
                 opts.put("help", "true");
                 continue;
             }
             if (a.startsWith("--")) {
-                int eq = a.indexOf('=');
-                if (eq > 2) {
-                    opts.put(a.substring(2, eq), a.substring(eq + 1));
-                } else if (i + 1 < args.length) {
-                    opts.put(a.substring(2), args[++i]);
+                String key = a.substring(2);
+                int eq = key.indexOf('=');
+                if (eq > 0) {
+                    opts.put(key.substring(0, eq), key.substring(eq + 1));
+                    continue;
+                }
+                if (BOOLEAN_FLAGS.contains(key)) {
+                    opts.put(key, "true");
+                    continue;
+                }
+                if (i + 1 < args.length) {
+                    opts.put(key, args[++i]);
                 } else {
-                    opts.put(a.substring(2), "true");
+                    opts.put(key, "true");
                 }
             }
         }
@@ -311,6 +421,15 @@ public class EvalCli {
         if (value == null || value.isBlank()) return fallback;
         try {
             return Double.parseDouble(value);
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    private int parseInt(String value, int fallback) {
+        if (value == null || value.isBlank()) return fallback;
+        try {
+            return Integer.parseInt(value);
         } catch (NumberFormatException ex) {
             return fallback;
         }
@@ -333,6 +452,13 @@ public class EvalCli {
         lines.add("  --scenarios <path>    YAML file mapping caseId → ActualBehavior (optional, for stub/replay)");
         lines.add("  --threshold <0..1>    Pass-rate threshold for exit code 0 (default: 1.0)");
         lines.add("  --category <CAT>      Filter by category (ROUTING/TRIAGE/BOOKING/KNOWLEDGE/SAFETY)");
+        lines.add("  --samples <N>         LlmJudge samples per case (default: 1, no re-run). N>1 enables");
+        lines.add("                          stability check: takes median, marks [unstable:] if std exceeds threshold");
+        lines.add("  --stability-threshold <0..1>  Std-dev threshold for unstable marker (default: 0.15)");
+        lines.add("  --generate            Skip eval, run AdversarialCaseGenerator instead. Requires");
+        lines.add("                          --mode record|replay + --out <path> (default target/eval/generated-cases.yaml)");
+        lines.add("                          Output is for human review, not direct check-in.");
+        lines.add("  --out <path>          Output path for --generate (default: target/eval/generated-cases.yaml)");
         lines.add("  --help                Show this help");
         lines.forEach(System.out::println);
     }

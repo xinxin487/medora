@@ -181,4 +181,61 @@ class EvalCliIntegrationTest {
         assertThat(exit).isZero();
         assertThat(reportDir.resolve("run.json")).exists();
     }
+
+    @Test
+    void generateWritesYamlFromReplayRecordings() throws Exception {
+        // 1. capturing client 跑一次 generator,捕获所有 (systemPrompt, userPrompt)
+        java.util.List<String[]> captured = new java.util.ArrayList<>();
+        com.medora.eval.llm.LlmClient capturing = new com.medora.eval.llm.LlmClient() {
+            int idx = 0;
+            @Override public String complete(String sys, String usr) {
+                captured.add(new String[]{sys, usr});
+                idx++;
+                return "{\"userMessage\":\"对抗变种 #" + idx + "\",\"rubric\":\"rubric #" + idx + "\"}";
+            }
+            @Override public String describe() { return "capturing"; }
+        };
+        new com.medora.eval.gen.AdversarialCaseGenerator(capturing).generateAll(
+                com.medora.eval.gen.SeedTemplates.defaultSeeds(),
+                com.medora.eval.gen.SeedTemplates.defaultMutations());
+        assertThat(captured).isNotEmpty();
+
+        // 2. 把 captured prompts + 模拟响应写入 recordings
+        Path recordings = tempDir.resolve("gen-recordings.json");
+        com.medora.eval.llm.LlmCallRecord record = new com.medora.eval.llm.LlmCallRecord();
+        for (int i = 0; i < captured.size(); i++) {
+            String[] p = captured.get(i);
+            String hash = com.medora.eval.llm.PromptHasher.hash(p[0], p[1]);
+            String resp = "{\"userMessage\":\"对抗变种 #" + (i + 1) + "\",\"rubric\":\"rubric #" + (i + 1) + "\"}";
+            record.add(new com.medora.eval.llm.LlmCallRecord.Entry(hash, p[0], p[1], resp));
+        }
+        new com.medora.eval.llm.LlmRecorderStore(recordings).save(record);
+
+        // 3. 跑 EvalCli --generate --mode replay
+        Path out = tempDir.resolve("gen.yaml");
+        int exit = new EvalCli().run(new String[]{
+                "--generate",
+                "--mode", "replay",
+                "--recordings", recordings.toString(),
+                "--out", out.toString()
+        });
+
+        assertThat(exit).isZero();
+        assertThat(out).exists();
+        String yaml = Files.readString(out);
+        assertThat(yaml).contains("---");              // 多文档
+        assertThat(yaml).contains("id:");              // case id
+        assertThat(yaml).contains("userMessage:");     // 用户消息
+        assertThat(yaml).contains("llm_judge");        // 生成的 case 都带 llm_judge rubric
+    }
+
+    @Test
+    void generateRejectsInvalidMode() {
+        int exit = new EvalCli().run(new String[]{
+                "--generate",
+                "--mode", "stub",
+                "--out", tempDir.resolve("unused.yaml").toString()
+        });
+        assertThat(exit).isEqualTo(2);
+    }
 }
