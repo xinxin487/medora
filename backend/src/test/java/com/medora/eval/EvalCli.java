@@ -15,6 +15,8 @@ import com.medora.eval.judge.ToolCallJudge;
 import com.medora.eval.loader.YamlTestCaseLoader;
 import com.medora.eval.llm.LlmClient;
 import com.medora.eval.llm.LlmRecorderStore;
+import com.medora.eval.llm.OpenAiCompatibleLlmClient;
+import com.medora.eval.llm.RecordingLlmClient;
 import com.medora.eval.llm.ReplayingLlmClient;
 import com.medora.eval.report.JsonReportWriter;
 import com.medora.eval.report.MarkdownReportWriter;
@@ -146,8 +148,17 @@ public class EvalCli {
                     return 2;
                 }
             }
+            case "record" -> {
+                LlmClient recorder = bootstrapRecordingClient(recordings);
+                if (recorder == null) {
+                    return 2;
+                }
+                judges.add(new LlmJudge(recorder));
+                log.info("LlmJudge enabled (record mode, client={})", recorder.describe());
+                harness = scenarios != null ? loadScenariosOrDefault(scenarios) : StubAdkHarness.constant(EvalRun.ActualBehavior.empty());
+            }
             default -> {
-                System.err.println("ERROR: unknown --mode: " + mode + " (supported: stub | replay | live)");
+                System.err.println("ERROR: unknown --mode: " + mode + " (supported: stub | replay | record | live)");
                 return 2;
             }
         }
@@ -185,6 +196,53 @@ public class EvalCli {
                 agg.passed(), agg.totalCases(), agg.errored());
 
         return agg.passRate() >= threshold ? 0 : 1;
+    }
+
+    /**
+     * --mode=record:用环境变量组装一个 OpenAI-compatible LLM 客户端,
+     * 再用 RecordingLlmClient 包装,把响应写入 --recordings 指定的文件(默认入 src/test/resources/eval/recordings/)。
+     *
+     * <p>不读 --llm-key 等 CLI 参数(避免 shell history 泄露)。环境变量:
+     * <ul>
+     *   <li>{@code AI_CHAT_API_KEY} — 必填</li>
+     *   <li>{@code AI_CHAT_MODEL} — 必填(如 deepseek-chat / gpt-4o-mini)</li>
+     *   <li>{@code DEEPSEEK_OPENAI_BASE_URL} — 选填(默认 https://api.deepseek.com/v1)</li>
+     * </ul>
+     * 失败返回 null,让上层退出码 2。
+     */
+    private LlmClient bootstrapRecordingClient(String recordingsArg) {
+        String apiKey = System.getenv("AI_CHAT_API_KEY");
+        String model = System.getenv("AI_CHAT_MODEL");
+        if (apiKey == null || apiKey.isBlank() || model == null || model.isBlank()) {
+            System.err.println("ERROR: --mode=record requires env vars AI_CHAT_API_KEY and AI_CHAT_MODEL");
+            System.err.println("       (avoid --llm-key CLI arg to keep keys out of shell history)");
+            return null;
+        }
+        String baseUrl = System.getenv("DEEPSEEK_OPENAI_BASE_URL");
+        if (baseUrl == null || baseUrl.isBlank()) {
+            baseUrl = "https://api.deepseek.com/v1";
+        }
+        Path recordings = recordingsArg != null
+                ? Paths.get(recordingsArg)
+                : Paths.get("src/test/resources/eval/recordings/judge.json");
+        try {
+            LlmRecorderStore store = new LlmRecorderStore(recordings);
+            OpenAiCompatibleLlmClient real = new OpenAiCompatibleLlmClient(baseUrl, apiKey, model);
+            RecordingLlmClient recorder = new RecordingLlmClient(
+                    (sys, usr) -> {
+                        try {
+                            return real.complete(sys, usr);
+                        } catch (Exception ex) {
+                            throw new RuntimeException(ex);
+                        }
+                    },
+                    store);
+            log.info("recording LLM calls to {} (base={}, model={})", recordings, baseUrl, model);
+            return recorder;
+        } catch (Exception ex) {
+            log.error("failed to set up recording LLM client", ex);
+            return null;
+        }
     }
 
     /**
@@ -235,10 +293,15 @@ public class EvalCli {
                 opts.put("help", "true");
                 continue;
             }
-            if (a.startsWith("--") && i + 1 < args.length) {
-                opts.put(a.substring(2), args[++i]);
-            } else if (a.startsWith("--")) {
-                opts.put(a.substring(2), "true");
+            if (a.startsWith("--")) {
+                int eq = a.indexOf('=');
+                if (eq > 2) {
+                    opts.put(a.substring(2, eq), a.substring(eq + 1));
+                } else if (i + 1 < args.length) {
+                    opts.put(a.substring(2), args[++i]);
+                } else {
+                    opts.put(a.substring(2), "true");
+                }
             }
         }
         return opts;
@@ -260,9 +323,11 @@ public class EvalCli {
         lines.add("Options:");
         lines.add("  --cases <path>        Test case directory or YAML file (default: src/test/resources/eval/cases)");
         lines.add("  --report-dir <path>   Output report directory (default: target/eval/latest)");
-        lines.add("  --mode <stub|replay|live>  Execution mode");
+        lines.add("  --mode <stub|replay|record|live>  Execution mode");
         lines.add("                          stub    = no LLM call, ActualBehavior from --scenarios or empty");
         lines.add("                          replay  = LlmJudge uses recordings (no network), needs --recordings");
+        lines.add("                          record  = calls real LLM via env vars, records to --recordings (default src/test/resources/eval/recordings/judge.json)");
+        lines.add("                                   env: AI_CHAT_API_KEY + AI_CHAT_MODEL (+ DEEPSEEK_OPENAI_BASE_URL, default deepseek)");
         lines.add("                          live    = bootstraps Spring + real AdkOrchestrator + DB (needs DB/LLM)");
         lines.add("  --recordings <path>   LLM recording JSON file (required for --mode=replay)");
         lines.add("  --scenarios <path>    YAML file mapping caseId → ActualBehavior (optional, for stub/replay)");

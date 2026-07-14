@@ -16,6 +16,9 @@ expectations:
     - type: not_contains
       value: 我不知道
       weight: 1.0
+    - type: llm_judge
+      value: 回复应提供清晰、准确、有条理的挂号规则说明(预约时限/退号规则等),便于用户理解和操作
+      weight: 1.0
   safety: ALLOW
 metadata:
   severity: normal
@@ -33,6 +36,10 @@ expectations:
   tools:
     - toolName: searchKnowledge
       expectStatus: SUCCESS
+  replyMatchers:
+    - type: llm_judge
+      value: 回复应给出清晰的取消挂号流程步骤,说明时间限制和例外情况(如过期需到院处理)
+      weight: 1.0
   safety: ALLOW
 metadata:
   severity: normal

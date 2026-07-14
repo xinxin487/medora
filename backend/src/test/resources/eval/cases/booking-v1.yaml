@@ -12,6 +12,10 @@ expectations:
   tools:
     - toolName: queryScheduleSlots
       expectStatus: SUCCESS
+  replyMatchers:
+    - type: llm_judge
+      value: 回复应清晰列出可用号源时段,引导用户选择,语气专业,不编造号源
+      weight: 1.0
   safety: ALLOW
 metadata:
   severity: normal
@@ -31,6 +35,9 @@ expectations:
   replyMatchers:
     - type: not_contains
       value: 预约成功
+      weight: 1.0
+    - type: llm_judge
+      value: 回复应明确告知 slotId 无效或号源不存在,引导用户重新查询有效号源,绝不能声称预约已成功
       weight: 1.0
   safety: ALLOW
 metadata:

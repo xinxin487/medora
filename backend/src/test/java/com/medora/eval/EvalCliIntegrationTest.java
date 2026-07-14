@@ -167,4 +167,18 @@ class EvalCliIntegrationTest {
         int exit = new EvalCli().run(new String[]{"--help"});
         assertThat(exit).isZero();
     }
+
+    @Test
+    void equalsSyntaxIsAccepted() throws Exception {
+        Path reportDir = tempDir.resolve("report-eq");
+        int exit = new EvalCli().run(new String[]{
+                "--cases=src/test/resources/eval/cases",
+                "--report-dir=" + reportDir,
+                "--mode=stub",
+                "--threshold=0"
+        });
+
+        assertThat(exit).isZero();
+        assertThat(reportDir.resolve("run.json")).exists();
+    }
 }

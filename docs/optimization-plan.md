@@ -13,7 +13,8 @@
 | **Phase 10 W3-W4** LLM 评分 + 录制回放 | 1 周 | LlmJudge + record/replay + 对抗生成 + DiffReporter | ✅ 已完成 |
 | **Phase 10 W4.5** 真实 ADK live harness | 3 天 | OrchestrateOneShotHarnessHelper + null-emitter 容忍 + EvalCli --mode=live | ✅ 已完成 |
 | **Phase 10 W5** CI 接入 | 3 天 | .github/workflows/eval.yml(stub 模式 + 上传报告) | ✅ 已完成 |
-| **Phase 10 W5.5** 后续 | — | --mode=record CLI + recordings 入 git + 对抗生成 CLI 子命令 | ☐ 待启动 |
+| **Phase 10 W5.5** record 模式 | — | `--mode=record` CLI(环境变量读 key)+ `OpenAiCompatibleLlmClient` + 单测 | ✅ 已完成 |
+| **Phase 10 W5.6** 后续 | — | recordings 入 git + 启用 eval-replay CI + 对抗生成 CLI 子命令 + LlmJudge 重跑稳定性 | 🟡 进行中(2/4) |
 
 依赖关系:**Phase 10 评测的是真实生产路径**,所以必须等 9.8 完成才能开跑(否则在评测一段即将被删的代码)。
 
@@ -270,7 +271,8 @@ jobs:
 | W4 | 10 | LlmJudge + 对抗生成器 + baseline diff + LLM record/replay + EvalCli replay 模式 | ✅ |
 | W4.5 | 10 | OrchestrateOneShotHarnessHelper + null-emitter 容忍 + EvalCli --mode=live | ✅ |
 | W5 | 10 | GitHub Actions eval.yml(stub 模式 CI) | ✅ |
-| W5.5 | 10 | --mode=record CLI + recordings 入 git + 对抗生成 CLI 子命令 | ☐ |
+| W5.5 | 10 | `--mode=record` CLI(env 读 key)+ `OpenAiCompatibleLlmClient` + 5 个单测 | ✅ |
+| W5.6 | 10 | recordings 入 git + 启用 eval-replay CI + 对抗生成 CLI 子命令 + LlmJudge 稳定性 | 🟡 2/4 |
 
 ### Phase 10 W1-W4 实际落地清单(2026-07-09 完成)
 
@@ -335,3 +337,16 @@ jobs:
 - **2026-07-13**:Phase 10 W4.5 + W5 落地(210/210 测试通过)。
   - W4.5:`AdkEventToSseAdapter` 的 publishDelta/publishToolStatus 加 `emitter == null` 短路,让 `orchestrateOneShot` 可用作"无 SSE 输出"的 collect-only 路径;新增 `OrchestrateOneShotHarnessHelper` 静态辅助类(注入 AdkOrchestrator / ConversationRepository / UserAccountRepository);`EvalCli --mode=live` 启动 Spring + 装配 live harness。
   - W5:`.github/workflows/eval.yml` 跑 stub 模式 + 上传报告 artifact。replay 模式占位待 recordings 入 git 后启用。
+- **2026-07-13**:Phase 10 W5.5 落地(215/215 测试通过)。
+  - 新增 `OpenAiCompatibleLlmClient`(test scope,~80 行,java.net.http.HttpClient,POST {baseUrl}/chat/completions,temperature=0,解析 choices[0].message.content)。
+  - `EvalCli --mode=record`:从环境变量读 `AI_CHAT_API_KEY` + `AI_CHAT_MODEL` + `DEEPSEEK_OPENAI_BASE_URL`(默认 https://api.deepseek.com/v1),用 RecordingLlmClient 包装写入 `--recordings`(默认 `src/test/resources/eval/recordings/judge.json`)。
+  - 安全:不引入 `--llm-key` CLI 参数(避免 shell history 泄露),fail-fast 提示缺哪个环境变量。
+  - 单测:5 个 `OpenAiCompatibleLlmClientTest`(JDK 自带 `HttpServer` 起 in-process stub,验证请求体 schema、URL、Authorization、响应解析、错误处理、trailing slash 剥离)。
+  - demo-perfect.yaml 扩展到全部 11 个 case(原 3 个 → 11 个,覆盖 routing/triage/booking/knowledge/safety 全类别)。
+  - **未启用** eval-replay CI job:需要先本地跑 --mode=record 生成 recordings.json,人工 review 后 commit 入 git,再取消 `.github/workflows/eval.yml` 中 eval-replay 的注释。eval.yml 注释块里写好了启用步骤。
+- **2026-07-14**:Phase 10 W5.6 部分落地(recordings 入 git + eval-replay CI 启用,2/4 完成)。
+  - 给 11 个 case 全部加 `type: llm_judge` replyMatcher(原 deterministic-only,接入 LlmJudge 4 维评分维度)。
+  - 本地跑 `--mode=record` 11 次调用 DeepSeek,生成 `src/test/resources/eval/recordings/judge.json`(11 条 entry,全 1.0 高分,无敏感信息)。
+  - 启用 `.github/workflows/eval.yml` 的 `eval-replay` job:从入 git recordings 回放 LlmJudge,threshold 0.7 容忍轻微抖动,报告上传 artifact。
+  - **顺手修 bug**:`EvalCli.parseArgs` 不支持 `--key=value` 等号格式(原仅 `--key value` 空格),导致 Windows MINGW64 下 `-Dexec.args="--mode=record ..."` 全部 fallback 默认值。修复后两种格式都支持,加了 `equalsSyntaxIsAccepted` 回归测试。
+  - **未完成**(剩余 2/4):对抗生成 CLI 子命令(`EvalCli --generate`)+ LlmJudge 重跑稳定性(同 case 跑 3 次取中位数,方差 > 1.0 标记 unstable)。
