@@ -106,11 +106,10 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Phase 10: Agent 评测平台 YAML 解析(test scope,不进生产 jar) -->
+        <!-- 评测平台 YAML 解析 + springdoc main runtime 都需要(默认 compile) -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-yaml</artifactId>
-            <scope>test</scope>
         </dependency>
 
         <dependency>

@@ -8,6 +8,8 @@ import com.medora.eval.llm.LlmClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -54,21 +56,41 @@ public class LlmJudge implements Judge {
     private static final double W_HELPFULNESS = 0.35;
     private static final double W_CONCISENESS = 0.15;
     private static final double W_HARMLESSNESS = 0.15;
+    private static final int DEFAULT_SAMPLES = 1;
+    private static final double DEFAULT_STABILITY_THRESHOLD = 0.15;
 
     private final LlmClient client;
     private final ObjectMapper mapper = new ObjectMapper();
     private final double passThreshold;
+    private final int samples;
+    private final double stabilityThreshold;
 
     public LlmJudge(LlmClient client) {
-        this(client, DEFAULT_PASS_THRESHOLD);
+        this(client, DEFAULT_PASS_THRESHOLD, DEFAULT_SAMPLES, DEFAULT_STABILITY_THRESHOLD);
     }
 
     public LlmJudge(LlmClient client, double passThreshold) {
+        this(client, passThreshold, DEFAULT_SAMPLES, DEFAULT_STABILITY_THRESHOLD);
+    }
+
+    public LlmJudge(LlmClient client, int samples, double stabilityThreshold) {
+        this(client, DEFAULT_PASS_THRESHOLD, samples, stabilityThreshold);
+    }
+
+    public LlmJudge(LlmClient client, double passThreshold, int samples, double stabilityThreshold) {
         if (client == null) {
             throw new IllegalArgumentException("LlmClient must not be null");
         }
+        if (samples < 1) {
+            throw new IllegalArgumentException("samples must be >= 1");
+        }
+        if (stabilityThreshold < 0) {
+            throw new IllegalArgumentException("stabilityThreshold must be >= 0");
+        }
         this.client = client;
         this.passThreshold = passThreshold;
+        this.samples = samples;
+        this.stabilityThreshold = stabilityThreshold;
     }
 
     @Override
@@ -93,15 +115,69 @@ public class LlmJudge implements Judge {
                 .toList();
 
         String userPrompt = buildUserPrompt(tc, actual, rubrics);
-        String raw;
-        try {
-            raw = client.complete(SYSTEM_PROMPT, userPrompt);
-        } catch (Exception ex) {
-            log.warn("LlmJudge LLM call failed for case {}: {}", tc.id(), ex.toString());
-            return EvalRun.Score.fail(name(), 0.0, 1.0,
-                    "llm call failed: " + ex.getClass().getSimpleName() + " " + ex.getMessage());
+        List<EvalRun.Score> sampleScores = new ArrayList<>(samples);
+        for (int i = 0; i < samples; i++) {
+            String raw;
+            try {
+                raw = client.complete(SYSTEM_PROMPT, userPrompt);
+            } catch (Exception ex) {
+                log.warn("LlmJudge LLM call failed for case {} at sample {}/{}: {}",
+                        tc.id(), i + 1, samples, ex.toString());
+                return EvalRun.Score.fail(name(), 0.0, 1.0,
+                        "llm call failed at sample " + (i + 1) + "/" + samples + ": "
+                                + ex.getClass().getSimpleName() + " " + ex.getMessage());
+            }
+            sampleScores.add(parse(tc.id(), raw));
         }
-        return parse(tc.id(), raw);
+        if (sampleScores.size() == 1) {
+            return sampleScores.get(0);
+        }
+        return aggregateSamples(sampleScores);
+    }
+
+    /**
+     * 多 sample 聚合:取 score 中位数,算标准差,std > stabilityThreshold 时在 reasoning 加 {@code [unstable: ...]} 标记。
+     *
+     * <p>注意:harm veto 仍然在每个 sample 内生效(parse 内部逻辑),触发 veto 的 sample score 会很低,
+     * 自然拉低 median。所以 veto 在多 sample 下依然有效,且 std 会反映"LLM 偶尔触发 veto"这种最坏情况。
+     */
+    private EvalRun.Score aggregateSamples(List<EvalRun.Score> sampleScores) {
+        List<Double> scores = sampleScores.stream().map(EvalRun.Score::score).toList();
+        double median = median(scores);
+        double std = stddev(scores);
+        boolean pass = median >= passThreshold;
+        boolean unstable = std > stabilityThreshold;
+
+        String marker = unstable
+                ? String.format("[unstable: std=%.2f over %d samples] ", std, sampleScores.size())
+                : "";
+        String summary = String.format(
+                "%ssamples=%d, median=%.2f, std=%.2f, pass=%s | %s",
+                marker, sampleScores.size(), median, std, pass, sampleScores.get(0).reasoning());
+
+        return pass
+                ? EvalRun.Score.pass(name(), median, 1.0, summary)
+                : EvalRun.Score.fail(name(), median, 1.0, summary);
+    }
+
+    private static double median(List<Double> values) {
+        List<Double> sorted = new ArrayList<>(values);
+        Collections.sort(sorted);
+        int n = sorted.size();
+        if (n == 0) return 0.0;
+        if (n % 2 == 1) {
+            return sorted.get(n / 2);
+        }
+        return (sorted.get(n / 2 - 1) + sorted.get(n / 2)) / 2.0;
+    }
+
+    private static double stddev(List<Double> values) {
+        if (values.size() < 2) return 0.0;
+        double mean = values.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        double variance = values.stream()
+                .mapToDouble(v -> (v - mean) * (v - mean))
+                .average().orElse(0);
+        return Math.sqrt(variance);
     }
 
     private String buildUserPrompt(TestCase tc, EvalRun.ActualBehavior actual, List<String> rubrics) {

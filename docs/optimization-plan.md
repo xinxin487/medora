@@ -14,7 +14,7 @@
 | **Phase 10 W4.5** 真实 ADK live harness | 3 天 | OrchestrateOneShotHarnessHelper + null-emitter 容忍 + EvalCli --mode=live | ✅ 已完成 |
 | **Phase 10 W5** CI 接入 | 3 天 | .github/workflows/eval.yml(stub 模式 + 上传报告) | ✅ 已完成 |
 | **Phase 10 W5.5** record 模式 | — | `--mode=record` CLI(环境变量读 key)+ `OpenAiCompatibleLlmClient` + 单测 | ✅ 已完成 |
-| **Phase 10 W5.6** 后续 | — | recordings 入 git + 启用 eval-replay CI + 对抗生成 CLI 子命令 + LlmJudge 重跑稳定性 | 🟡 进行中(2/4) |
+| **Phase 10 W5.6** 后续 | — | recordings 入 git + 启用 eval-replay CI + 对抗生成 CLI 子命令 + LlmJudge 重跑稳定性 | ✅ 已完成 |
 
 依赖关系:**Phase 10 评测的是真实生产路径**,所以必须等 9.8 完成才能开跑(否则在评测一段即将被删的代码)。
 
@@ -272,7 +272,7 @@ jobs:
 | W4.5 | 10 | OrchestrateOneShotHarnessHelper + null-emitter 容忍 + EvalCli --mode=live | ✅ |
 | W5 | 10 | GitHub Actions eval.yml(stub 模式 CI) | ✅ |
 | W5.5 | 10 | `--mode=record` CLI(env 读 key)+ `OpenAiCompatibleLlmClient` + 5 个单测 | ✅ |
-| W5.6 | 10 | recordings 入 git + 启用 eval-replay CI + 对抗生成 CLI 子命令 + LlmJudge 稳定性 | 🟡 2/4 |
+| W5.6 | 10 | recordings 入 git + 启用 eval-replay CI + 对抗生成 CLI 子命令 + LlmJudge 稳定性 | ✅ |
 
 ### Phase 10 W1-W4 实际落地清单(2026-07-09 完成)
 
@@ -350,3 +350,10 @@ jobs:
   - 启用 `.github/workflows/eval.yml` 的 `eval-replay` job:从入 git recordings 回放 LlmJudge,threshold 0.7 容忍轻微抖动,报告上传 artifact。
   - **顺手修 bug**:`EvalCli.parseArgs` 不支持 `--key=value` 等号格式(原仅 `--key value` 空格),导致 Windows MINGW64 下 `-Dexec.args="--mode=record ..."` 全部 fallback 默认值。修复后两种格式都支持,加了 `equalsSyntaxIsAccepted` 回归测试。
   - **未完成**(剩余 2/4):对抗生成 CLI 子命令(`EvalCli --generate`)+ LlmJudge 重跑稳定性(同 case 跑 3 次取中位数,方差 > 1.0 标记 unstable)。
+- **2026-07-14**:Phase 10 W5.6 全部落地(223/223 测试通过,W5.6 4/4 完成)。
+  - `LlmJudge` 多 sample 聚合:加 `samples`/`stabilityThreshold` 字段 + 4 个构造器(默认 samples=1 向后兼容);samples>1 时取 median + 算 stddev,std > stabilityThreshold 在 reasoning 加 `[unstable: std=X.XX over N samples]` 标记。
+  - `EvalCli` 新增 `--samples N` + `--stability-threshold X` 两个 CLI 参数。
+  - `EvalCli` 新增 `--generate` 子命令:串通 `AdversarialCaseGenerator` + `GeneratedCaseYamlWriter`,支持 `--mode record|replay` + `--out <path>` + `--category <CAT>` 过滤,默认输出到 `target/eval/generated-cases.yaml`(reviewer 需补 expectations.route/tools 后才能入 cases/)。
+  - **顺手修 parseArgs bug**:加 `BOOLEAN_FLAGS` set,boolean flag(`--generate`/`--help`)不消费下一个 token;原 bug 导致 `--generate --mode replay` 把 `--mode` 当成 generate 的 value。
+  - 测试增量:`LlmJudgeTest` 10→15(+5:`multiSampleStableResponseAggregatesWithNoUnstableMarker` / `highVarianceAcrossSamplesMarkedUnstable` / `medianBelowThresholdFailsEvenIfOneSampleHigh` / `multiSampleShortCircuitsOnLlmFailure` / `samplesMustBePositive`);`EvalCliIntegrationTest` 6→8(+2:`generateWritesYamlFromReplayRecordings` / `generateRejectsInvalidMode`)。
+  - **CI 升级**:`.github/workflows/eval.yml` 的 `actions/checkout` / `actions/setup-java` / `actions/upload-artifact` 全部 `@v4` → `@v7`(Node.js 20 deprecated,2026-09-16 完全移除)。
