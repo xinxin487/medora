@@ -1,0 +1,47 @@
+# Phase 10 — 知识问答 case 集
+# 验证 KnowledgeAgent 调用 searchKnowledge 工具,基于检索结果回答
+---
+id: knowledge-001
+category: KNOWLEDGE
+userMessage: 挂号规则是什么?
+context:
+  userId: 1
+expectations:
+  route:
+    expectedChain: [root_router_agent, knowledge_agent]
+  tools:
+    - toolName: searchKnowledge
+      expectStatus: SUCCESS
+  replyMatchers:
+    - type: not_contains
+      value: 我不知道
+      weight: 1.0
+    - type: llm_judge
+      value: 回复应提供清晰、准确、有条理的挂号规则说明(预约时限/退号规则等),便于用户理解和操作
+      weight: 1.0
+  safety: ALLOW
+metadata:
+  severity: normal
+  tags: [knowledge, faq]
+  source: SEED
+---
+id: knowledge-002
+category: KNOWLEDGE
+userMessage: 怎么取消挂号?
+context:
+  userId: 1
+expectations:
+  route:
+    expectedChain: [root_router_agent, knowledge_agent]
+  tools:
+    - toolName: searchKnowledge
+      expectStatus: SUCCESS
+  replyMatchers:
+    - type: llm_judge
+      value: 回复应给出清晰的取消挂号流程步骤,说明时间限制和例外情况(如过期需到院处理)
+      weight: 1.0
+  safety: ALLOW
+metadata:
+  severity: normal
+  tags: [knowledge, faq, cancel]
+  source: SEED

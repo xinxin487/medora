@@ -1,0 +1,94 @@
+name: Agent Eval (CI)
+
+# Phase 10 W5 — 评测平台 CI 集成
+#
+# 触发条件:所有 PR + push 到 main/feature 分支
+# 跑两个 job:
+#   1. eval-stub      — 不需 LLM,跑全部 case + 确定性 judge,失败阻断
+#   2. eval-replay    — 从入 git 的 recordings 回放 LlmJudge(待 W5.5 落地 recordings 后启用)
+#
+# live 模式不跑在 CI(需要真 DB + LLM key),开发者本地按需跑。
+#
+# 退出码语义:
+#   0 = 通过(passRate >= threshold)
+#   1 = 存在失败(阻断 PR)
+#   2 = 执行错误(case 加载失败等,也阻断)
+
+on:
+  pull_request:
+    branches: [main, feature/*]
+  push:
+    branches: [main]
+
+jobs:
+  eval-stub:
+    name: Eval stub mode (no LLM)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run mvn test (full suite, includes eval unit tests)
+        run: mvn -B test
+
+      - name: Run EvalCli (stub mode, threshold 1.0)
+        run: |
+          mvn -B test-compile exec:java \
+            -Dexec.mainClass=com.medora.eval.EvalCli \
+            -Dexec.classpathScope=test \
+            -Dexec.args="--cases src/test/resources/eval/cases --report-dir target/eval/ci-stub --threshold 1.0 --scenarios src/test/resources/eval/scenarios/demo-perfect.yaml"
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-stub-report
+          path: backend/target/eval/ci-stub/
+          if-no-files-found: warn
+
+  # W5.6 — eval-replay:从入 git 的 recordings.json 回放 LlmJudge。
+  # recordings 由开发者本地 --mode=record 生成,review 后 commit 入 git。
+  # 阈值 0.7 容忍 LlmJudge 在不同边界 case 上的轻微抖动;低于此值视为回归。
+  eval-replay:
+    name: Eval replay mode (LLM Judge from recordings)
+    runs-on: ubuntu-latest
+    needs: eval-stub
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run EvalCli (replay mode)
+        run: |
+          mvn -B test-compile exec:java \
+            -Dexec.mainClass=com.medora.eval.EvalCli \
+            -Dexec.classpathScope=test \
+            -Dexec.args="--mode=replay \
+                         --recordings src/test/resources/eval/recordings/judge.json \
+                         --scenarios src/test/resources/eval/scenarios/demo-perfect.yaml \
+                         --threshold 0.7"
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-replay-report
+          path: backend/target/eval/latest/
+          if-no-files-found: warn

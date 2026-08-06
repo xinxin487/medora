@@ -1,5 +1,7 @@
 package com.medora.common.api;
 
+import com.medora.common.web.RequestMetadata;
+
 import java.time.OffsetDateTime;
 
 public record ApiResponse<T>(
@@ -14,7 +16,7 @@ public record ApiResponse<T>(
                 "SUCCESS",
                 "success",
                 data,
-                "phase0-placeholder-request-id",
+                RequestMetadata.currentRequestId(),
                 OffsetDateTime.now()
         );
     }

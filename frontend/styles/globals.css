@@ -4,15 +4,85 @@
 
 :root {
   color-scheme: light;
+  --bg-root: #f6f1e8;
+  --bg-surface: rgba(255, 253, 248, 0.92);
+  --bg-soft: #edf3ee;
+  --ink-strong: #142a27;
+  --ink-body: #38524c;
+  --ink-subtle: #6d7e79;
+  --line-soft: #d9ddd4;
+  --accent-main: #1f5c52;
+  --accent-main-strong: #143b35;
+  --accent-warm: #b88451;
+  --accent-warm-soft: rgba(184, 132, 81, 0.1);
+  --danger-soft: #f7ebe5;
+  --font-display:
+    "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Noto Serif SC", "Songti SC", "STSong", serif;
+  --font-body:
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
 }
 
 html,
 body {
+  min-height: 100vh;
   margin: 0;
   padding: 0;
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(184, 132, 81, 0.18), transparent 26rem),
+    radial-gradient(circle at bottom right, rgba(31, 92, 82, 0.18), transparent 30rem),
+    linear-gradient(180deg, #fffdf8 0%, var(--bg-root) 100%);
+  color: var(--ink-strong);
+  font-family: var(--font-body);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
 * {
   box-sizing: border-box;
+}
+
+body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  opacity: 0.55;
+  background-image:
+    linear-gradient(rgba(20, 42, 39, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 42, 39, 0.022) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(circle at center, black 38%, transparent 100%);
+}
+
+::selection {
+  background: rgba(31, 92, 82, 0.16);
+  color: var(--ink-strong);
+}
+
+.medora-display {
+  font-family: var(--font-display);
+}
+
+.medora-surface {
+  position: relative;
+  overflow: hidden;
+  border-radius: 30px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 252, 246, 0.88));
+  box-shadow:
+    0 26px 70px rgba(20, 42, 39, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.medora-grid::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.28), transparent 42%),
+    linear-gradient(0deg, rgba(31, 92, 82, 0.03), rgba(31, 92, 82, 0.03));
 }
