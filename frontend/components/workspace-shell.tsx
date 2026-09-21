@@ -74,6 +74,12 @@ const workspaceNav: Record<WorkspaceRole, WorkspaceNavItem[]> = {
       caption: "链路与工具",
     },
     {
+      key: "tools",
+      href: "/admin/tools",
+      label: "工具网关",
+      caption: "调用与健康",
+    },
+    {
       key: "audit",
       href: "/admin/audit-logs",
       label: "审计日志",

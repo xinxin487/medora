@@ -57,9 +57,15 @@ public class ToolAuditEntity extends BaseEntity {
     void setArgumentsSummary(String argumentsSummary) { this.argumentsSummary = argumentsSummary; }
     public String getToolName() { return toolName; }
     public String getToolVersion() { return toolVersion; }
+    public String getSourceType() { return sourceType; }
+    public String getRiskLevel() { return riskLevel; }
+    public String getAgentName() { return agentName; }
+    public String getConversationId() { return conversationId; }
     public String getStatus() { return status; }
+    public String getErrorCode() { return errorCode; }
     public Long getDurationMs() { return durationMs; }
     public String getTraceId() { return traceId; }
+    public String getRequestId() { return requestId; }
     public String getArgumentsHash() { return argumentsHash; }
     public String getArgumentsSummary() { return argumentsSummary; }
 }
