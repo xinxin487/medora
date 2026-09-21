@@ -11,8 +11,11 @@ import com.medora.adk.tool.MedoraFunctionTool;
 import com.medora.adk.tool.ToolSchemaRegistry;
 import com.medora.agent.tool.ToolNames;
 import com.medora.agent.tool.ToolRegistry;
+import com.medora.common.config.EvolutionProperties;
+import com.medora.toolgateway.execution.ToolGateway;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 
@@ -45,6 +48,8 @@ public class AdkAgentTopology {
     private final LlmOutputSafetyAfterCallback outputSafety;
     private final HighRiskToolBeforeCallback highRiskToolGuard;
     private final LlmHallucinationAfterCallback hallucinationGuard;
+    private final EvolutionProperties evolutionProperties;
+    private final ToolGateway toolGateway;
 
     public AdkAgentTopology(
             LangChain4j deepseekLlmBridge,
@@ -54,6 +59,15 @@ public class AdkAgentTopology {
             LlmOutputSafetyAfterCallback outputSafety,
             HighRiskToolBeforeCallback highRiskToolGuard,
             LlmHallucinationAfterCallback hallucinationGuard) {
+        this(deepseekLlmBridge, toolRegistry, schemaRegistry, inputSafety, outputSafety, highRiskToolGuard, hallucinationGuard,
+                new EvolutionProperties(false, false, false, false, false), null);
+    }
+
+    @Autowired
+    public AdkAgentTopology(LangChain4j deepseekLlmBridge, ToolRegistry toolRegistry, ToolSchemaRegistry schemaRegistry,
+                            LlmInputSafetyBeforeCallback inputSafety, LlmOutputSafetyAfterCallback outputSafety,
+                            HighRiskToolBeforeCallback highRiskToolGuard, LlmHallucinationAfterCallback hallucinationGuard,
+                            EvolutionProperties evolutionProperties, ToolGateway toolGateway) {
         this.deepseekLlmBridge = deepseekLlmBridge;
         this.toolRegistry = toolRegistry;
         this.schemaRegistry = schemaRegistry;
@@ -61,41 +75,47 @@ public class AdkAgentTopology {
         this.outputSafety = outputSafety;
         this.highRiskToolGuard = highRiskToolGuard;
         this.hallucinationGuard = hallucinationGuard;
+        this.evolutionProperties = evolutionProperties;
+        this.toolGateway = toolGateway;
     }
 
     @Bean
     public BaseTool adkQueryDepartmentsTool() {
-        return MedoraFunctionTool.create(ToolNames.QUERY_DEPARTMENTS, toolRegistry, schemaRegistry);
+        return tool(ToolNames.QUERY_DEPARTMENTS, "booking");
     }
 
     @Bean
     public BaseTool adkQueryDoctorsTool() {
-        return MedoraFunctionTool.create(ToolNames.QUERY_DOCTORS, toolRegistry, schemaRegistry);
+        return tool(ToolNames.QUERY_DOCTORS, "booking");
     }
 
     @Bean
     public BaseTool adkQueryScheduleSlotsTool() {
-        return MedoraFunctionTool.create(ToolNames.QUERY_SCHEDULE_SLOTS, toolRegistry, schemaRegistry);
+        return tool(ToolNames.QUERY_SCHEDULE_SLOTS, "booking");
     }
 
     @Bean
     public BaseTool adkGetUserAppointmentsTool() {
-        return MedoraFunctionTool.create(ToolNames.GET_USER_APPOINTMENTS, toolRegistry, schemaRegistry);
+        return tool(ToolNames.GET_USER_APPOINTMENTS, "booking");
     }
 
     @Bean
     public BaseTool adkBookAppointmentTool() {
-        return MedoraFunctionTool.create(ToolNames.BOOK_APPOINTMENT, toolRegistry, schemaRegistry);
+        return tool(ToolNames.BOOK_APPOINTMENT, "booking");
     }
 
     @Bean
     public BaseTool adkCancelAppointmentTool() {
-        return MedoraFunctionTool.create(ToolNames.CANCEL_APPOINTMENT, toolRegistry, schemaRegistry);
+        return tool(ToolNames.CANCEL_APPOINTMENT, "booking");
     }
 
     @Bean
     public BaseTool adkSearchKnowledgeTool() {
-        return MedoraFunctionTool.create(ToolNames.SEARCH_KNOWLEDGE, toolRegistry, schemaRegistry);
+        return tool(ToolNames.SEARCH_KNOWLEDGE, "knowledge");
+    }
+
+    private MedoraFunctionTool tool(String name, String agent) {
+        return new MedoraFunctionTool(toolRegistry.get(name), schemaRegistry.get(name), toolGateway, evolutionProperties.toolGateway(), agent);
     }
 
     @Bean
