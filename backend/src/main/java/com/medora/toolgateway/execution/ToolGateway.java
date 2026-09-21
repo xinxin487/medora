@@ -21,11 +21,20 @@ import org.springframework.beans.factory.annotation.Autowired;
         if (!validator.validate(descriptor.inputSchema(), request.arguments()).isEmpty()) return GatewayToolResult.failure(GatewayToolResult.Status.FAILED, GatewayErrorCode.VALIDATION_FAILED, "tool arguments invalid", false);
         if (!confirmation.confirmed(descriptor, request.context())) return GatewayToolResult.failure(GatewayToolResult.Status.CONFIRMATION_REQUIRED, GatewayErrorCode.CONFIRMATION_REQUIRED, "confirmation required", false);
         var adapter = adapters.get(descriptor.qualifiedName());
+        java.util.concurrent.Callable<Object> call;
+        if (adapter != null) call = () -> adapter.apply(request);
+        else {
+            var bean = adapterBeans.stream().filter(candidate -> candidate.supports(descriptor.qualifiedName())).findFirst().orElse(null);
+            if (bean == null) return GatewayToolResult.failure(GatewayToolResult.Status.UNAVAILABLE, GatewayErrorCode.ADAPTER_NOT_FOUND, "tool adapter unavailable", true);
+            call = () -> bean.execute(request);
+        }
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+        java.util.concurrent.Future<Object> future = executor.submit(call);
         try {
-            if (adapter != null) return GatewayToolResult.success(adapter.apply(request));
-            return adapterBeans.stream().filter(candidate -> candidate.supports(descriptor.qualifiedName())).findFirst()
-                    .map(candidate -> GatewayToolResult.success(candidate.execute(request)))
-                    .orElseGet(() -> GatewayToolResult.failure(GatewayToolResult.Status.UNAVAILABLE, GatewayErrorCode.ADAPTER_NOT_FOUND, "tool adapter unavailable", true));
-        } catch (RuntimeException ex) { return GatewayToolResult.failure(GatewayToolResult.Status.FAILED, GatewayErrorCode.FAILED, "tool execution failed", descriptor.idempotent()); }
+            Object data = future.get(descriptor.timeout().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            return GatewayToolResult.success(data);
+        } catch (java.util.concurrent.TimeoutException ex) { future.cancel(true); return GatewayToolResult.failure(GatewayToolResult.Status.TIMEOUT, GatewayErrorCode.DEPENDENCY_TIMEOUT, "tool execution timed out", descriptor.idempotent());
+        } catch (Exception ex) { return GatewayToolResult.failure(GatewayToolResult.Status.FAILED, GatewayErrorCode.FAILED, "tool execution failed", descriptor.idempotent());
+        } finally { executor.shutdownNow(); }
     }
 }

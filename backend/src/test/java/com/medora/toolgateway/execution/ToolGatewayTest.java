@@ -35,5 +35,13 @@ class ToolGatewayTest {
         assertThat(gateway.execute(new GatewayToolRequest(descriptor.qualifiedName(), Map.of("surprise", true), context)).status()).isEqualTo(GatewayToolResult.Status.FAILED);
         assertThat(called).isFalse();
     }
+    @Test void returnsTimeoutWithoutWaitingForSlowAdapter() {
+        ToolDescriptor descriptor = new ToolDescriptor("local.fast", "1", "", ToolSourceType.LOCAL, Map.of(), Map.of(), ToolRisk.LOW, List.of("USER"), List.of("booking"), Duration.ofMillis(20), true, false, "INTERNAL");
+        ToolGateway gateway = new ToolGateway(new GatewayToolRegistry(List.of(descriptor)), new ToolAuthorizationPolicy(), new ToolConfirmationPolicy(), Map.of(descriptor.qualifiedName(), request -> { try { Thread.sleep(200); } catch (InterruptedException ignored) { } return Map.of(); }));
+        long started = System.nanoTime();
+        var context = new GatewayExecutionContext(1L, List.of("USER"), "booking", "c", "t", "r", null);
+        assertThat(gateway.execute(new GatewayToolRequest(descriptor.qualifiedName(), Map.of(), context)).status()).isEqualTo(GatewayToolResult.Status.TIMEOUT);
+        assertThat((System.nanoTime() - started) / 1_000_000).isLessThan(150);
+    }
     private ToolDescriptor descriptor() { return new ToolDescriptor("local.queryScheduleSlots", "1", "", ToolSourceType.LOCAL, Map.of(), Map.of(), ToolRisk.LOW, List.of("USER"), List.of("booking"), Duration.ofSeconds(1), true, false, "INTERNAL"); }
 }
