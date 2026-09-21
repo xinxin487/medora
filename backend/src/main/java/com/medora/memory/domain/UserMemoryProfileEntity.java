@@ -164,6 +164,12 @@ public class UserMemoryProfileEntity extends BaseEntity {
         return expiresAt != null && !expiresAt.isAfter(now == null ? OffsetDateTime.now() : now);
     }
 
+    public void applyGovernance(String scopeKey, String normalizedValue, String fingerprint) {
+        this.scopeKey = scopeKey == null || scopeKey.isBlank() ? "GLOBAL" : scopeKey;
+        this.normalizedValue = normalizedValue == null ? "" : normalizedValue;
+        this.fingerprint = fingerprint == null || fingerprint.isBlank() ? "legacy" : fingerprint;
+    }
+
     public UserAccountEntity getUserAccount() {
         return userAccount;
     }

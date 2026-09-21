@@ -23,6 +23,11 @@ public interface UserMemoryProfileRepository extends JpaRepository<UserMemoryPro
             String memoryKey
     );
 
+    Optional<UserMemoryProfileEntity> findByUserAccountIdAndFingerprint(Long userAccountId, String fingerprint);
+
+    List<UserMemoryProfileEntity> findByUserAccountIdAndStatusAndMemoryTypeAndScopeKey(
+            Long userAccountId, String status, String memoryType, String scopeKey);
+
     List<UserMemoryProfileEntity> findTop10ByUserAccountAndStatusOrderByLastConfirmedAtDescCreatedAtDesc(
             UserAccountEntity userAccount,
             String status

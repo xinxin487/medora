@@ -9,6 +9,11 @@ import com.medora.appointment.api.response.AppointmentResponse;
 import com.medora.auth.domain.UserAccountEntity;
 import com.medora.knowledge.service.KnowledgeJsonService;
 import com.medora.memory.domain.UserMemoryProfileEntity;
+import com.medora.memory.governance.MemoryCandidate;
+import com.medora.memory.governance.MemoryCardinality;
+import com.medora.memory.governance.MemoryConflictResolver;
+import com.medora.memory.governance.MemoryFingerprint;
+import com.medora.memory.governance.MemoryNormalizer;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +25,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 public class MemoryService {
@@ -34,6 +40,8 @@ public class MemoryService {
     private final KnowledgeJsonService knowledgeJsonService;
     private final ObjectMapper objectMapper;
     private final AgentModelGateway agentModelGateway;
+    private final MemoryNormalizer memoryNormalizer = new MemoryNormalizer();
+    private final MemoryConflictResolver memoryConflictResolver = new MemoryConflictResolver();
 
     public MemoryService(UserMemoryProfileRepository userMemoryProfileRepository,
                          KnowledgeJsonService knowledgeJsonService,
@@ -326,10 +334,35 @@ public class MemoryService {
             return;
         }
         OffsetDateTime now = OffsetDateTime.now();
+        MemoryCandidate candidate = memoryNormalizer.normalize(new MemoryCandidate(
+                memoryType, "GLOBAL", memoryKey, null, summary, confidence, source, null, now, expiresAt));
         OffsetDateTime effectiveExpiry = expiresAt != null ? expiresAt : now.plusDays(DEFAULT_MEMORY_TTL_DAYS);
+        long userId = userAccount.getId() == null ? 0L : userAccount.getId();
+        String fingerprint = MemoryFingerprint.sha256(userId, candidate);
         UserMemoryProfileEntity entity = userMemoryProfileRepository
-                .findByUserAccountAndMemoryTypeAndMemoryKey(userAccount, memoryType, memoryKey)
+                .findByUserAccountIdAndFingerprint(userAccount.getId(), fingerprint)
+                .or(() -> userMemoryProfileRepository.findByUserAccountAndMemoryTypeAndMemoryKey(userAccount, memoryType, memoryKey))
                 .orElse(null);
+        List<UserMemoryProfileEntity> conflictLosers = new ArrayList<>();
+        if (entity == null && MemoryCardinality.forType(memoryType) == MemoryCardinality.SINGLE_VALUE) {
+            List<UserMemoryProfileEntity> active = Optional.ofNullable(userMemoryProfileRepository
+                    .findByUserAccountIdAndStatusAndMemoryTypeAndScopeKey(userAccount.getId(),
+                            UserMemoryProfileEntity.STATUS_ACTIVE, memoryType, candidate.scopeKey()))
+                    .orElse(List.of());
+            for (UserMemoryProfileEntity existing : active) {
+                MemoryCandidate existingCandidate = new MemoryCandidate(memoryType, existing.getScopeKey(),
+                        existing.getNormalizedValue(), existing.getNormalizedValue(), existing.getSummary(),
+                        existing.getConfidence().doubleValue(), existing.getSource(), null,
+                        existing.getLastConfirmedAt(), existing.getExpiresAt());
+                MemoryConflictResolver.Decision decision = memoryConflictResolver.resolve(existingCandidate, candidate);
+                if (decision == MemoryConflictResolver.Decision.KEEP_EXISTING) {
+                    return;
+                }
+                if (decision == MemoryConflictResolver.Decision.REPLACE_EXISTING) {
+                    conflictLosers.add(existing);
+                }
+            }
+        }
 
         // 置信度合并：取已有与新值的较大者；同源多轮重复则递增
         double mergedConfidence = confidence;
@@ -360,6 +393,13 @@ public class MemoryService {
         } else {
             entity.refresh(summary, knowledgeJsonService.toJson(value),
                     mergedConfidence, source, now, effectiveExpiry);
+        }
+        entity.applyGovernance(candidate.scopeKey(), candidate.normalizedValue(), fingerprint);
+        for (UserMemoryProfileEntity loser : conflictLosers) {
+            loser.supersedeWith(entity);
+        }
+        if (!conflictLosers.isEmpty()) {
+            userMemoryProfileRepository.saveAll(conflictLosers);
         }
         userMemoryProfileRepository.save(entity);
     }

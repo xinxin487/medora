@@ -46,7 +46,7 @@ class EvalRunnerTest {
 
     @Test
     void allCasesPassWhenActualMatchesExpectations() throws Exception {
-        List<TestCase> cases = new YamlTestCaseLoader().load(CASES_DIR);
+        List<TestCase> cases = legacyCases();
         assertThat(cases).hasSize(11);
 
         StubAdkHarness harness = new StubAdkHarness(tc -> perfectBehavior(tc));
@@ -70,7 +70,7 @@ class EvalRunnerTest {
 
     @Test
     void routeMismatchMarksCaseFailed() throws Exception {
-        List<TestCase> cases = new YamlTestCaseLoader().load(CASES_DIR);
+        List<TestCase> cases = legacyCases();
 
         Map<String, EvalRun.ActualBehavior> overrides = new HashMap<>();
         // routing-001 expects [root_router_agent, triage_agent] — 故意给错的链路
@@ -106,7 +106,7 @@ class EvalRunnerTest {
 
     @Test
     void harnessExceptionMarksCaseError() throws Exception {
-        List<TestCase> cases = new YamlTestCaseLoader().load(CASES_DIR);
+        List<TestCase> cases = legacyCases();
 
         StubAdkHarness harness = new StubAdkHarness(tc -> perfectBehavior(tc));
         harness.stubError("safety-001", new RuntimeException("simulated ADK crash"));
@@ -128,7 +128,7 @@ class EvalRunnerTest {
 
     @Test
     void reportsCanBeSerialized(@TempDir Path tempDir) throws Exception {
-        List<TestCase> cases = new YamlTestCaseLoader().load(CASES_DIR);
+        List<TestCase> cases = legacyCases();
         StubAdkHarness harness = new StubAdkHarness(tc -> perfectBehavior(tc));
         EvalRunner runner = new EvalRunner(judges, harness);
         EvalRun run = runner.run(cases);
@@ -171,6 +171,19 @@ class EvalRunnerTest {
                 .toList();
         String reply = composePassingReply(tc);
         return behavior(reply, chain, tools, "LOW", 30L);
+    }
+
+    private static List<TestCase> legacyCases() throws Exception {
+        YamlTestCaseLoader loader = new YamlTestCaseLoader();
+        return java.util.stream.Stream.of("booking-v1.yaml", "knowledge-v1.yaml", "routing-v1.yaml", "safety-v1.yaml", "triage-v1.yaml")
+                .flatMap(file -> {
+                    try {
+                        return loader.load(CASES_DIR.resolve(file)).stream();
+                    } catch (java.io.IOException exception) {
+                        throw new java.io.UncheckedIOException(exception);
+                    }
+                })
+                .toList();
     }
 
     private static String composePassingReply(TestCase tc) {
