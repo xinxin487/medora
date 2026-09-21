@@ -51,6 +51,25 @@ public class KnowledgeChunkEntity {
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
+    public static final String TYPE_PARENT = "PARENT";
+    public static final String TYPE_CHILD = "CHILD";
+
+    @Column(name = "chunk_type", nullable = false)
+    private String chunkType = TYPE_CHILD;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_chunk_id")
+    private KnowledgeChunkEntity parentChunk;
+
+    @Column(name = "token_count", nullable = false)
+    private Integer tokenCount = 0;
+
+    @Column(name = "content_hash", nullable = false)
+    private String contentHash;
+
+    @Column(name = "page_number")
+    private Integer pageNumber;
+
     public static KnowledgeChunkEntity active(KnowledgeDocumentEntity document,
                                               int chunkIndex,
                                               String sectionPath,
@@ -63,6 +82,21 @@ public class KnowledgeChunkEntity {
         entity.content = content;
         entity.metadataJson = metadataJson == null || metadataJson.isBlank() ? "{}" : metadataJson;
         entity.status = "ACTIVE";
+        entity.contentHash = sha256(content);
+        entity.tokenCount = estimateTokens(content);
+        return entity;
+    }
+
+    public static KnowledgeChunkEntity parent(KnowledgeDocumentEntity document, int chunkIndex, String sectionPath, String content, String metadataJson) {
+        KnowledgeChunkEntity entity = active(document, chunkIndex, sectionPath, content, metadataJson);
+        entity.chunkType = TYPE_PARENT;
+        return entity;
+    }
+
+    public static KnowledgeChunkEntity child(KnowledgeDocumentEntity document, KnowledgeChunkEntity parent, int chunkIndex, String sectionPath, String content, String metadataJson) {
+        KnowledgeChunkEntity entity = active(document, chunkIndex, sectionPath, content, metadataJson);
+        entity.chunkType = TYPE_CHILD;
+        entity.parentChunk = parent;
         return entity;
     }
 
@@ -96,4 +130,11 @@ public class KnowledgeChunkEntity {
     public String getStatus() {
         return status;
     }
+    public String getChunkType() { return chunkType; }
+    public KnowledgeChunkEntity getParentChunk() { return parentChunk; }
+    public Integer getTokenCount() { return tokenCount; }
+    public String getContentHash() { return contentHash; }
+    public Integer getPageNumber() { return pageNumber; }
+    private static String sha256(String content) { try { return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest((content == null ? "" : content).getBytes(java.nio.charset.StandardCharsets.UTF_8))); } catch (java.security.NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); } }
+    private static int estimateTokens(String content) { return Math.max(1, (int) Math.ceil((content == null ? 0 : content.codePointCount(0, content.length())) / 2.0)); }
 }

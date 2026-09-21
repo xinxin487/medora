@@ -67,6 +67,16 @@ public class KnowledgeDocumentEntity extends BaseEntity {
     @Column(name = "uploaded_at", nullable = false)
     private OffsetDateTime uploadedAt;
 
+    @Column(name = "effective_from") private OffsetDateTime effectiveFrom;
+    @Column(name = "effective_to") private OffsetDateTime effectiveTo;
+    @Column(name = "access_scopes", nullable = false, columnDefinition = "text[]") @JdbcTypeCode(SqlTypes.ARRAY)
+    private String[] accessScopes = new String[0];
+
+    public boolean isEffectiveAt(OffsetDateTime at) {
+        OffsetDateTime point = at == null ? OffsetDateTime.now() : at;
+        return (effectiveFrom == null || !effectiveFrom.isAfter(point)) && (effectiveTo == null || effectiveTo.isAfter(point));
+    }
+
     public static KnowledgeDocumentEntity uploaded(String title,
                                                    String sourceType,
                                                    String sourceUri,

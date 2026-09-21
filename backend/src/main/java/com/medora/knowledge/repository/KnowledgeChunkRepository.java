@@ -18,6 +18,8 @@ public interface KnowledgeChunkRepository extends JpaRepository<KnowledgeChunkEn
 
     List<KnowledgeChunkEntity> findByDocumentOrderByChunkIndexAsc(KnowledgeDocumentEntity document);
 
+    List<KnowledgeChunkEntity> findByDocumentAndChunkTypeOrderByChunkIndexAsc(KnowledgeDocumentEntity document, String chunkType);
+
     @Modifying
     @Query(value = """
             update knowledge_chunk
