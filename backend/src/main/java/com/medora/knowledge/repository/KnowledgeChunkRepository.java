@@ -49,8 +49,11 @@ public interface KnowledgeChunkRepository extends JpaRepository<KnowledgeChunkEn
             from knowledge_chunk c
             join knowledge_document d on d.id = c.document_id
             where c.status = 'ACTIVE'
+              and c.chunk_type = 'CHILD'
               and d.publish_status = 'PUBLISHED'
               and d.ingest_status = 'INDEXED'
+              and (d.effective_from is null or d.effective_from <= now())
+              and (d.effective_to is null or d.effective_to > now())
               and (:bizScope is null or d.biz_scope = :bizScope)
               and (
                     c.content_tsv @@ plainto_tsquery('simple', :ftsQuery)

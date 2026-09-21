@@ -51,9 +51,12 @@ public class KnowledgeVectorSearchRepository {
                     from knowledge_chunk c
                     join knowledge_document d on d.id = c.document_id
                     where c.status = 'ACTIVE'
+                      and c.chunk_type = 'CHILD'
                       and c.embedding is not null
                       and d.publish_status = 'PUBLISHED'
                       and d.ingest_status = 'INDEXED'
+                      and (d.effective_from is null or d.effective_from <= now())
+                      and (d.effective_to is null or d.effective_to > now())
                       and (? is null or d.biz_scope = ?)
                       and (? is null or c.embedding_model = ?)
                     order by score desc, d.uploaded_at desc, c.chunk_index asc

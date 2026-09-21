@@ -26,19 +26,26 @@ public class HybridRetriever {
     }
 
     public List<KnowledgeChunkSearchRow> retrieve(String query, String bizScope, int topK) {
-        int candidatePoolSize = Math.max(topK, 8);
-        double kwWeight = ragProperties.getKeywordWeight();
-        double vecWeight = ragProperties.getVectorWeight();
-        double minThreshold = ragProperties.getMinScoreThreshold();
-        Map<Long, ScoredRow> merged = new LinkedHashMap<>();
-        merge(merged, keywordRetriever.search(query, bizScope, candidatePoolSize), kwWeight);
-        merge(merged, vectorRetriever.search(query, bizScope, candidatePoolSize), vecWeight);
-        return rerankService.rerank(query, merged.values().stream()
-                .map(ScoredRow::toSearchRow)
-                .filter(row -> row.getScore() >= minThreshold)
+        int keywordK = Math.max(topK, ragProperties.getKeywordCandidateK());
+        int vectorK = Math.max(topK, ragProperties.getVectorCandidateK());
+        List<KnowledgeChunkSearchRow> keyword = keywordRetriever.search(query, bizScope, keywordK);
+        List<KnowledgeChunkSearchRow> vector = vectorRetriever.search(query, bizScope, vectorK);
+        Map<Long, KnowledgeChunkSearchRow> rows = new LinkedHashMap<>();
+        keyword.forEach(row -> rows.putIfAbsent(row.getChunkId(), row)); vector.forEach(row -> rows.putIfAbsent(row.getChunkId(), row));
+        List<RankedCandidate> fused = new ReciprocalRankFusion().fuse(toCandidates(keyword), toCandidates(vector), 60);
+        return rerankService.rerank(query, fused.stream()
+                .map(candidate -> new ScoredRow(rows.get(candidate.chunkId()), candidate.rrfScore()).toSearchRow())
+                .filter(row -> row.getScore() > 0)
                 .sorted((left, right) -> Double.compare(right.getScore(), left.getScore()))
+                .limit(ragProperties.getRerankCandidateK())
                 .limit(topK)
                 .toList());
+    }
+
+    private List<RankedCandidate> toCandidates(List<KnowledgeChunkSearchRow> rows) {
+        java.util.ArrayList<RankedCandidate> candidates = new java.util.ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) candidates.add(new RankedCandidate(rows.get(i).getChunkId(), i + 1, 0, 0));
+        return candidates;
     }
 
     private void merge(Map<Long, ScoredRow> merged, List<KnowledgeChunkSearchRow> rows, double weight) {

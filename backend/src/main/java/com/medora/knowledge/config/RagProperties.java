@@ -12,6 +12,9 @@ public class RagProperties {
     private double minScoreThreshold = 0.15;
     private double keywordWeight = 0.55;
     private double vectorWeight = 0.45;
+    private int keywordCandidateK = 20;
+    private int vectorCandidateK = 20;
+    private int rerankCandidateK = 20;
 
     public int getDefaultTopK() {
         return defaultTopK;
@@ -52,4 +55,10 @@ public class RagProperties {
     public void setVectorWeight(double vectorWeight) {
         this.vectorWeight = vectorWeight;
     }
+    public int getKeywordCandidateK() { return keywordCandidateK; }
+    public void setKeywordCandidateK(int keywordCandidateK) { this.keywordCandidateK = keywordCandidateK; }
+    public int getVectorCandidateK() { return vectorCandidateK; }
+    public void setVectorCandidateK(int vectorCandidateK) { this.vectorCandidateK = vectorCandidateK; }
+    public int getRerankCandidateK() { return rerankCandidateK; }
+    public void setRerankCandidateK(int rerankCandidateK) { this.rerankCandidateK = rerankCandidateK; }
 }
