@@ -26,6 +26,11 @@ public class HybridRetriever {
     }
 
     public List<KnowledgeChunkSearchRow> retrieve(String query, String bizScope, int topK) {
+        return diagnose(query, bizScope, topK).stream().map(DiagnosticCandidate::row).toList();
+    }
+
+    /** Captures genuine retrieval-stage ranks for the ADMIN diagnostics console. */
+    public List<DiagnosticCandidate> diagnose(String query, String bizScope, int topK) {
         int keywordK = Math.max(topK, ragProperties.getKeywordCandidateK());
         int vectorK = Math.max(topK, ragProperties.getVectorCandidateK());
         List<KnowledgeChunkSearchRow> keyword = keywordRetriever.search(query, bizScope, keywordK);
@@ -33,19 +38,29 @@ public class HybridRetriever {
         Map<Long, KnowledgeChunkSearchRow> rows = new LinkedHashMap<>();
         keyword.forEach(row -> rows.putIfAbsent(row.getChunkId(), row)); vector.forEach(row -> rows.putIfAbsent(row.getChunkId(), row));
         List<RankedCandidate> fused = new ReciprocalRankFusion().fuse(toCandidates(keyword), toCandidates(vector), 60);
-        return rerankService.rerank(query, fused.stream()
+        Map<Long, RankedCandidate> fusedById = fused.stream().collect(java.util.stream.Collectors.toMap(RankedCandidate::chunkId, item -> item));
+        List<KnowledgeChunkSearchRow> candidates = fused.stream()
                 .map(candidate -> new ScoredRow(rows.get(candidate.chunkId()), candidate.rrfScore()).toSearchRow())
                 .filter(row -> row.getScore() > 0)
                 .sorted((left, right) -> Double.compare(right.getScore(), left.getScore()))
                 .limit(ragProperties.getRerankCandidateK())
-                .limit(topK)
-                .toList());
+                .toList();
+        List<KnowledgeChunkSearchRow> reranked = rerankService.rerank(query, candidates).stream().limit(topK).toList();
+        return java.util.stream.IntStream.range(0, reranked.size())
+                .mapToObj(index -> { KnowledgeChunkSearchRow row = reranked.get(index); RankedCandidate rank = fusedById.get(row.getChunkId());
+                    return new DiagnosticCandidate(row, rank.keywordRank(), rank.vectorRank(), rank.rrfScore(), index + 1); })
+                .toList();
     }
 
     private List<RankedCandidate> toCandidates(List<KnowledgeChunkSearchRow> rows) {
         java.util.ArrayList<RankedCandidate> candidates = new java.util.ArrayList<>();
         for (int i = 0; i < rows.size(); i++) candidates.add(new RankedCandidate(rows.get(i).getChunkId(), i + 1, 0, 0));
         return candidates;
+    }
+
+    public record DiagnosticCandidate(KnowledgeChunkSearchRow row, int keywordRank, int vectorRank,
+                                      double rrfScore, int rerankRank) {
+        public Long chunkId() { return row.getChunkId(); }
     }
 
     private void merge(Map<Long, ScoredRow> merged, List<KnowledgeChunkSearchRow> rows, double weight) {

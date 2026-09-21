@@ -32,8 +32,8 @@ class RetrievalServiceTest {
         HybridRetriever hybridRetriever = mock(HybridRetriever.class);
         RetrievalService service = new RetrievalService(hybridRetriever,
                 new RetrievalResultAssembler(), ragProperties);
-        when(hybridRetriever.retrieve("我最近咳嗽，应该挂哪个科？", null, 5))
-                .thenReturn(List.of(cancelAppointmentRow()));
+        when(hybridRetriever.diagnose("我最近咳嗽，应该挂哪个科？", null, 5))
+                .thenReturn(List.of(candidate()));
 
         assertTrue(service.retrieve("我最近咳嗽，应该挂哪个科？", null, 5).isEmpty());
     }
@@ -43,8 +43,8 @@ class RetrievalServiceTest {
         HybridRetriever hybridRetriever = mock(HybridRetriever.class);
         RetrievalService service = new RetrievalService(hybridRetriever,
                 new RetrievalResultAssembler(), ragProperties);
-        when(hybridRetriever.retrieve("取消挂号", null, 5))
-                .thenReturn(List.of(cancelAppointmentRow()));
+        when(hybridRetriever.diagnose("取消挂号", null, 5))
+                .thenReturn(List.of(candidate()));
 
         List<RetrievalResult> results = service.retrieve("取消挂号", null, 5);
 
@@ -57,7 +57,7 @@ class RetrievalServiceTest {
         HybridRetriever hybridRetriever = mock(HybridRetriever.class);
         KnowledgeChunkRepository chunks = mock(KnowledgeChunkRepository.class);
         RetrievalService service = new RetrievalService(hybridRetriever, new RetrievalResultAssembler(), ragProperties, chunks);
-        when(hybridRetriever.retrieve("取消挂号", null, 5)).thenReturn(List.of(cancelAppointmentRow()));
+        when(hybridRetriever.diagnose("取消挂号", null, 5)).thenReturn(List.of(candidate()));
         when(chunks.findParentContentByChildId(1L)).thenReturn(java.util.Optional.of("完整的退号流程说明"));
 
         RetrievalResult result = service.retrieve("取消挂号", null, 5).getFirst();
@@ -77,5 +77,9 @@ class RetrievalServiceTest {
                 "phase5-cancel-rule",
                 "APPOINTMENT_RULE"
         );
+    }
+
+    private HybridRetriever.DiagnosticCandidate candidate() {
+        return new HybridRetriever.DiagnosticCandidate(cancelAppointmentRow(), 1, 1, .45, 1);
     }
 }

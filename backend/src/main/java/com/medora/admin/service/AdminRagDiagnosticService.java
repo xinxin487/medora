@@ -20,7 +20,7 @@ public class AdminRagDiagnosticService {
     public DiagnosticResponse diagnose(String query, String bizScope, Integer topK) {
         long started = System.nanoTime();
         int limit = topK == null ? 5 : Math.min(Math.max(topK, 1), 10);
-        List<DiagnosticItem> items = retrievalService.retrieve(query, bizScope, limit).stream()
+        List<DiagnosticItem> items = retrievalService.diagnose(query, bizScope, limit).stream()
                 .map(this::toItem)
                 .toList();
         Map<String, String> filters = new LinkedHashMap<>();
@@ -30,9 +30,10 @@ public class AdminRagDiagnosticService {
                 (System.nanoTime() - started) / 1_000_000, items.isEmpty() ? "NO_MATCH" : "NONE");
     }
 
-    private DiagnosticItem toItem(RetrievalResult result) {
+    private DiagnosticItem toItem(RetrievalService.DiagnosticRetrievalResult diagnostic) {
+        RetrievalResult result = diagnostic.result();
         return new DiagnosticItem(result.documentId(), result.chunkId(), null, result.sectionPath(), -1,
-                -1, -1, result.score(), result.score(), result.snippet(), "RANKS_NOT_CAPTURED");
+                diagnostic.lexicalRank(), diagnostic.vectorRank(), diagnostic.rrfScore(), result.score(), result.snippet(), "NONE");
     }
 
     public record DiagnosticResponse(String query, Map<String, String> appliedFilters, List<DiagnosticItem> items,

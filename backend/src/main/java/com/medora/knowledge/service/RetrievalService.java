@@ -60,15 +60,21 @@ public class RetrievalService {
     }
 
     public List<RetrievalResult> retrieve(String query, String bizScope, int topK) {
+        return diagnose(query, bizScope, topK).stream().map(DiagnosticRetrievalResult::result).toList();
+    }
+
+    public List<DiagnosticRetrievalResult> diagnose(String query, String bizScope, int topK) {
         if (!StringUtils.hasText(query)) {
             return List.of();
         }
         String normalizedQuery = query.trim();
         int limit = Math.min(Math.max(topK, 1), ragProperties.getMaxTopK());
         QueryFeatures queryFeatures = QueryFeatures.from(normalizedQuery);
-        return hybridRetriever.retrieve(normalizedQuery, bizScope, limit).stream()
-                .filter(row -> isRelevant(row, queryFeatures))
-                .map(row -> retrievalResultAssembler.assemble(row, parentContent(row.getChunkId()), 800))
+        return hybridRetriever.diagnose(normalizedQuery, bizScope, limit).stream()
+                .filter(candidate -> isRelevant(candidate.row(), queryFeatures))
+                .map(candidate -> new DiagnosticRetrievalResult(
+                        retrievalResultAssembler.assemble(candidate.row(), parentContent(candidate.chunkId()), 800),
+                        candidate.keywordRank(), candidate.vectorRank(), candidate.rrfScore(), candidate.rerankRank()))
                 .toList();
     }
 
@@ -167,4 +173,7 @@ public class RetrievalService {
             return normalized.isBlank();
         }
     }
+
+    public record DiagnosticRetrievalResult(RetrievalResult result, int lexicalRank, int vectorRank,
+                                            double rrfScore, int rerankRank) { }
 }
