@@ -23,6 +23,7 @@ public final class AdkToolContextResolver {
     public static final String KEY_USER_ACCOUNT_ID = "medora:userAccountId";
     public static final String KEY_USER_MESSAGE = "medora:userMessage";
     public static final String KEY_TRACE_ID = "medora:traceId";
+    public static final String KEY_CONVERSATION_ID = "medora:conversationId";
 
     private AdkToolContextResolver() {
     }
@@ -33,7 +34,8 @@ public final class AdkToolContextResolver {
         Long userAccountId = readLong(state, KEY_USER_ACCOUNT_ID);
         String userMessage = readString(state, KEY_USER_MESSAGE);
         String traceId = readString(state, KEY_TRACE_ID);
-        return new ToolExecutionContext(userAccountId, userMessage, traceId);
+        String conversationId = readString(state, KEY_CONVERSATION_ID);
+        return new ToolExecutionContext(userAccountId, userMessage, traceId, conversationId);
     }
 
     private static Long readLong(Map<String, Object> state, String key) {

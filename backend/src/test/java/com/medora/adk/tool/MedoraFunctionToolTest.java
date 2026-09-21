@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -51,7 +52,9 @@ class MedoraFunctionToolTest {
         MedoraFunctionTool tool = new MedoraFunctionTool(legacy, descriptor, gateway, true, "knowledge");
         Map<String, Object> output = tool.runAsync(Map.of("query", "hours"), stubToolContext()).blockingGet();
         assertThat(output.get("status")).isEqualTo("SUCCESS");
-        verify(gateway).execute(any());
+        ArgumentCaptor<GatewayToolRequest> request = ArgumentCaptor.forClass(GatewayToolRequest.class);
+        verify(gateway).execute(request.capture());
+        assertThat(request.getValue().context().conversationId()).isEqualTo("conversation-1");
         verifyNoInteractions(legacy);
     }
 
@@ -249,6 +252,7 @@ class MedoraFunctionToolTest {
         stateMap.put(AdkToolContextResolver.KEY_USER_ACCOUNT_ID, 1L);
         stateMap.put(AdkToolContextResolver.KEY_USER_MESSAGE, "测试消息");
         stateMap.put(AdkToolContextResolver.KEY_TRACE_ID, "trace-1");
+        stateMap.put(AdkToolContextResolver.KEY_CONVERSATION_ID, "conversation-1");
         doReturn(new State(new ConcurrentHashMap<>(stateMap))).when(ctx).state();
         return ctx;
     }

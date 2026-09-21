@@ -111,7 +111,7 @@ public final class MedoraFunctionTool extends BaseTool {
                 ToolExecutionContext legacyContext = AdkToolContextResolver.resolve(toolContext);
                 GatewayToolResult gatewayResult = gateway.execute(new GatewayToolRequest("local." + descriptor.name() + "@1",
                         args == null ? Map.of() : args, new GatewayExecutionContext(legacyContext.userAccountId(), java.util.List.of("USER"), agentName,
-                        null, legacyContext.traceId(), java.util.UUID.randomUUID().toString(), null)));
+                        legacyContext.conversationId(), legacyContext.traceId(), java.util.UUID.randomUUID().toString(), null)));
                 Map<String, Object> normalized = new HashMap<>();
                 normalized.put("status", gatewayResult.status().name());
                 if (gatewayResult.data() != null) normalized.put("data", RESULT_NORMALIZER.valueToTree(gatewayResult.data()));

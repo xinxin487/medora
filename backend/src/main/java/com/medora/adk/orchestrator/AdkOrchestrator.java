@@ -227,6 +227,7 @@ public class AdkOrchestrator {
         state.put(AdkToolContextResolver.KEY_USER_ACCOUNT_ID, command.userAccountId());
         state.put(AdkToolContextResolver.KEY_USER_MESSAGE, command.message());
         state.put(AdkToolContextResolver.KEY_TRACE_ID, command.traceId());
+        state.put(AdkToolContextResolver.KEY_CONVERSATION_ID, sessionId);
         if (evolutionProperties.contextBuilder() && contextBuilder != null) {
             try {
                 AgentContextBundle bundle = contextBuilder.build(new ContextBuildRequest(

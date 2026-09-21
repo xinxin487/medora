@@ -28,7 +28,8 @@ class AdkToolContextResolverTest {
         stubState(ctx, Map.of(
                 AdkToolContextResolver.KEY_USER_ACCOUNT_ID, 42L,
                 AdkToolContextResolver.KEY_USER_MESSAGE, "我想约心内科",
-                AdkToolContextResolver.KEY_TRACE_ID, "trace-abc-123"
+                AdkToolContextResolver.KEY_TRACE_ID, "trace-abc-123",
+                AdkToolContextResolver.KEY_CONVERSATION_ID, "conversation-123"
         ));
 
         ToolExecutionContext result = AdkToolContextResolver.resolve(ctx);
@@ -36,6 +37,7 @@ class AdkToolContextResolverTest {
         assertThat(result.userAccountId()).isEqualTo(42L);
         assertThat(result.userMessage()).isEqualTo("我想约心内科");
         assertThat(result.traceId()).isEqualTo("trace-abc-123");
+        assertThat(result.conversationId()).isEqualTo("conversation-123");
     }
 
     @Test

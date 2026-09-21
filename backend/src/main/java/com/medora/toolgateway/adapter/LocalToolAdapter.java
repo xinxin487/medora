@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
     public boolean supports(String qualifiedToolName) { return qualifiedToolName != null && qualifiedToolName.startsWith("local.") && qualifiedToolName.endsWith("@1"); }
     public Object execute(GatewayToolRequest request) {
         String name = request.qualifiedToolName().substring("local.".length(), request.qualifiedToolName().length() - 2);
-        ToolExecutionContext context = new ToolExecutionContext(request.context().userId(), null, request.context().traceId());
+        ToolExecutionContext context = new ToolExecutionContext(request.context().userId(), null, request.context().traceId(), request.context().conversationId());
         return registry.get(name).execute(request.arguments(), context);
     }
 }
