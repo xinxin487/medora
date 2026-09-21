@@ -4,6 +4,7 @@ import com.medora.ai.embedding.EmbeddingService;
 import com.medora.ai.embedding.EmbeddingVector;
 import com.medora.knowledge.chunk.DocumentChunk;
 import com.medora.knowledge.chunk.DocumentChunker;
+import com.medora.knowledge.chunk.StructureAwareSplitter;
 import com.medora.knowledge.domain.KnowledgeChunkEntity;
 import com.medora.knowledge.domain.KnowledgeDocumentEntity;
 import com.medora.knowledge.domain.KnowledgeIngestTaskEntity;
@@ -18,6 +19,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 
 @Service
@@ -73,22 +75,20 @@ public class DocumentIngestService {
         );
         try {
             knowledgeChunkRepository.deleteByDocument(document);
-            List<DocumentChunk> chunks = documentChunker.chunk(parsedContent);
+            List<DocumentChunk> chunks = new StructureAwareSplitter().split(parsedContent);
+            if (chunks.isEmpty()) {
+                chunks = documentChunker.chunk(parsedContent);
+            }
+            Map<Integer, KnowledgeChunkEntity> parents = new HashMap<>();
             for (DocumentChunk chunk : chunks) {
+                if (!"PARENT".equals(chunk.chunkType())) continue;
+                parents.put(chunk.parentOrdinal(), knowledgeChunkRepository.save(KnowledgeChunkEntity.parent(document, chunk.index(), chunk.sectionPath(), chunk.content(), metadata(document))));
+            }
+            for (DocumentChunk chunk : chunks) {
+                if ("PARENT".equals(chunk.chunkType())) continue;
+                KnowledgeChunkEntity savedChunk = knowledgeChunkRepository.save(KnowledgeChunkEntity.child(document, parents.get(chunk.parentOrdinal()), chunk.index(), chunk.sectionPath(), chunk.content(), metadata(document)));
                 EmbeddingVector embedding = embeddingService.embed(chunk.content());
-                KnowledgeChunkEntity savedChunk = knowledgeChunkRepository.save(KnowledgeChunkEntity.active(
-                        document,
-                        chunk.index(),
-                        chunk.sectionPath(),
-                        chunk.content(),
-                        knowledgeJsonService.toJson(Map.of(
-                                "bizScope", document.getBizScope(),
-                                "departmentTags", document.getDepartmentTags(),
-                                "doctorTags", document.getDoctorTags()
-                        ))
-                ));
-                knowledgeChunkRepository.updateEmbedding(savedChunk.getId(), toVectorLiteral(embedding.values()),
-                        embedding.model());
+                knowledgeChunkRepository.updateEmbedding(savedChunk.getId(), toVectorLiteral(embedding.values()), embedding.model());
             }
             document = knowledgeDocumentRepository.findById(document.getId()).orElseThrow();
             document.markIndexed();
@@ -134,5 +134,9 @@ public class DocumentIngestService {
             builder.append(values[index]);
         }
         return builder.append(']').toString();
+    }
+
+    private String metadata(KnowledgeDocumentEntity document) {
+        return knowledgeJsonService.toJson(Map.of("bizScope", document.getBizScope(), "departmentTags", document.getDepartmentTags(), "doctorTags", document.getDoctorTags()));
     }
 }
