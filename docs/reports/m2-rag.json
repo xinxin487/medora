@@ -1,0 +1,12 @@
+{
+  "suite" : "rag-layered-v1",
+  "caseCount" : 12,
+  "recallAt5" : 1.0,
+  "mrrAt5" : 1.0,
+  "ndcgAt5" : 1.0,
+  "refusalAccuracy" : 1.0,
+  "citationHitRate" : 1.0,
+  "latencyMs" : 0.0,
+  "promptTokenEstimate" : 0,
+  "mode" : "fixture-baseline"
+}
