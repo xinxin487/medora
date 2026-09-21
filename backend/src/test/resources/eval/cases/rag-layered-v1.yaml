@@ -1,0 +1,37 @@
+cases:
+  - id: rag-faq
+    query: 挂号如何取消
+    expected: doc-faq
+  - id: rag-synonym
+    query: 退号规定
+    expected: doc-faq
+  - id: rag-cross-paragraph
+    query: 门诊取消时间
+    expected: doc-rules
+  - id: rag-no-answer
+    query: 不存在的病种
+    expected: NO_ANSWER
+  - id: rag-expired
+    query: 过期规则
+    expected: NO_ANSWER
+  - id: rag-department-filter
+    query: 呼吸内科号源
+    expected: doc-respiratory
+  - id: rag-conflicting-version
+    query: 最新挂号规则
+    expected: doc-rules-v2
+  - id: rag-parent-completion
+    query: 完整退号流程
+    expected: doc-rules
+  - id: rag-lexical-only
+    query: 号源
+    expected: doc-slots
+  - id: rag-vector-only
+    query: 预约时间段
+    expected: doc-slots
+  - id: rag-hybrid-win
+    query: 呼吸科预约
+    expected: doc-respiratory
+  - id: rag-duplicate-content
+    query: 取消挂号
+    expected: doc-faq
