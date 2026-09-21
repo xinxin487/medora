@@ -66,6 +66,11 @@ public class AgentTraceEntity extends BaseEntity {
     @JdbcTypeCode(SqlTypes.JSON)
     private String riskFactorsJson = "[]";
 
+    @Column(name = "context_diagnostic_json", nullable = false)
+    @ColumnTransformer(write = "?::jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String contextDiagnosticJson = "{}";
+
     public static AgentTraceEntity of(String traceId,
                                       ConversationEntity conversation,
                                       ChatMessageEntity message,
@@ -160,5 +165,13 @@ public class AgentTraceEntity extends BaseEntity {
 
     public String getRiskFactorsJson() {
         return riskFactorsJson;
+    }
+
+    public String getContextDiagnosticJson() {
+        return contextDiagnosticJson;
+    }
+
+    public void setContextDiagnosticJson(String contextDiagnosticJson) {
+        this.contextDiagnosticJson = contextDiagnosticJson == null || contextDiagnosticJson.isBlank() ? "{}" : contextDiagnosticJson;
     }
 }

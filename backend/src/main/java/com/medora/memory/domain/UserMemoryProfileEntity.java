@@ -56,6 +56,22 @@ public class UserMemoryProfileEntity extends BaseEntity {
     @Column(name = "expires_at")
     private OffsetDateTime expiresAt;
 
+    @Column(name = "scope_key", nullable = false)
+    private String scopeKey = "GLOBAL";
+
+    @Column(name = "normalized_value")
+    private String normalizedValue;
+
+    @Column(name = "fingerprint", nullable = false)
+    private String fingerprint = "legacy";
+
+    @Column(name = "evidence_count", nullable = false)
+    private Integer evidenceCount = 1;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "superseded_by_id")
+    private UserMemoryProfileEntity supersededBy;
+
     public static UserMemoryProfileEntity create(UserAccountEntity userAccount,
                                                  String memoryType,
                                                  String memoryKey,
@@ -70,6 +86,7 @@ public class UserMemoryProfileEntity extends BaseEntity {
         entity.memoryType = memoryType;
         entity.memoryKey = memoryKey;
         entity.refresh(summary, valueJson, confidence, source, confirmedAt, expiresAt);
+        entity.normalizedValue = entity.summary.toLowerCase(java.util.Locale.ROOT).trim();
         return entity;
     }
 
@@ -131,6 +148,22 @@ public class UserMemoryProfileEntity extends BaseEntity {
         this.expiresAt = OffsetDateTime.now();
     }
 
+    public void confirmEvidence(OffsetDateTime confirmedAt) {
+        this.evidenceCount = (this.evidenceCount == null ? 0 : this.evidenceCount) + 1;
+        this.lastConfirmedAt = confirmedAt == null ? OffsetDateTime.now() : confirmedAt;
+        this.lastAccessedAt = this.lastConfirmedAt;
+        this.status = STATUS_ACTIVE;
+    }
+
+    public void supersedeWith(UserMemoryProfileEntity winner) {
+        this.supersededBy = winner;
+        this.status = STATUS_INACTIVE;
+    }
+
+    public boolean isExpired(OffsetDateTime now) {
+        return expiresAt != null && !expiresAt.isAfter(now == null ? OffsetDateTime.now() : now);
+    }
+
     public UserAccountEntity getUserAccount() {
         return userAccount;
     }
@@ -174,4 +207,10 @@ public class UserMemoryProfileEntity extends BaseEntity {
     public OffsetDateTime getExpiresAt() {
         return expiresAt;
     }
+
+    public String getScopeKey() { return scopeKey; }
+    public String getNormalizedValue() { return normalizedValue; }
+    public String getFingerprint() { return fingerprint; }
+    public Integer getEvidenceCount() { return evidenceCount; }
+    public UserMemoryProfileEntity getSupersededBy() { return supersededBy; }
 }

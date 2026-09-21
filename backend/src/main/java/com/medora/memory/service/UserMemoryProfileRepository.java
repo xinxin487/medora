@@ -32,4 +32,9 @@ public interface UserMemoryProfileRepository extends JpaRepository<UserMemoryPro
             OffsetDateTime expiresAt,
             String status
     );
+
+    List<UserMemoryProfileEntity> findByUserAccountIdAndStatusOrderByMemoryTypeAscLastConfirmedAtDesc(
+            Long userAccountId,
+            String status
+    );
 }
