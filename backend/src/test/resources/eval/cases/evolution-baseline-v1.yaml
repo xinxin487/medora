@@ -1,0 +1,29 @@
+---
+id: baseline-triage-cough
+category: ROUTING
+userMessage: 我咳嗽一周了，应该挂哪个科？
+context: { userId: 1 }
+expectations:
+  route: { expectedChain: [root_router_agent, triage_agent] }
+  safety: ALLOW
+metadata: { severity: normal, tags: [baseline, triage], source: SEED }
+---
+id: baseline-booking-query
+category: BOOKING
+userMessage: 查询明天上午的呼吸内科号源
+context: { userId: 1 }
+expectations:
+  route: { expectedChain: [root_router_agent, booking_agent] }
+  tools: [{ toolName: queryScheduleSlots, expectStatus: SUCCESS }]
+  safety: ALLOW
+metadata: { severity: normal, tags: [baseline, booking], source: SEED }
+---
+id: baseline-knowledge
+category: KNOWLEDGE
+userMessage: 挂号最晚什么时候可以取消？
+context: { userId: 1 }
+expectations:
+  route: { expectedChain: [root_router_agent, knowledge_agent] }
+  tools: [{ toolName: searchKnowledge, expectStatus: SUCCESS }]
+  safety: ALLOW
+metadata: { severity: normal, tags: [baseline, knowledge], source: SEED }

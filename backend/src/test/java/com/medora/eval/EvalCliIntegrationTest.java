@@ -3,11 +3,14 @@ package com.medora.eval;
 import com.medora.eval.llm.LlmCallRecord;
 import com.medora.eval.llm.LlmRecorderStore;
 import com.medora.eval.llm.PromptHasher;
+import com.medora.eval.loader.YamlTestCaseLoader;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,6 +34,22 @@ class EvalCliIntegrationTest {
 
     @TempDir
     Path tempDir;
+
+    @Test
+    void loadsEvolutionBaselineCasesWithStableRoutes() throws Exception {
+        List<com.medora.eval.domain.TestCase> cases = new YamlTestCaseLoader().load(
+                Path.of("src/test/resources/eval/cases/evolution-baseline-v1.yaml"));
+
+        assertThat(cases).extracting(com.medora.eval.domain.TestCase::id)
+                .containsExactly("baseline-triage-cough", "baseline-booking-query", "baseline-knowledge");
+        assertThat(new HashSet<>(cases.stream().map(com.medora.eval.domain.TestCase::id).toList()))
+                .hasSize(cases.size());
+        assertThat(cases).allSatisfy(testCase -> {
+            assertThat(testCase.userMessage()).isNotBlank();
+            assertThat(testCase.expectations().route()).isNotNull();
+            assertThat(testCase.expectations().route().expectedChain()).isNotEmpty();
+        });
+    }
 
     @Test
     void stubEmpty() throws Exception {

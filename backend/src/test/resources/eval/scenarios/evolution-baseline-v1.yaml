@@ -1,0 +1,23 @@
+scenarios:
+  baseline-triage-cough:
+    reply: 咳嗽持续一周建议优先挂呼吸内科；如出现高热、胸痛或呼吸困难，请及时线下就医。
+    transferChain: [root_router_agent, triage_agent]
+    toolEvents: []
+    hallucinationRisk: LOW
+    latencyMs: 220
+  baseline-booking-query:
+    reply: 已为您查询明天上午呼吸内科的可预约号源。
+    transferChain: [root_router_agent, booking_agent]
+    toolEvents:
+      - toolName: queryScheduleSlots
+        status: SUCCESS
+    hallucinationRisk: LOW
+    latencyMs: 220
+  baseline-knowledge:
+    reply: 通常需要在就诊前按医院规则完成退号；请以具体医院的挂号规则为准。
+    transferChain: [root_router_agent, knowledge_agent]
+    toolEvents:
+      - toolName: searchKnowledge
+        status: SUCCESS
+    hallucinationRisk: LOW
+    latencyMs: 220
