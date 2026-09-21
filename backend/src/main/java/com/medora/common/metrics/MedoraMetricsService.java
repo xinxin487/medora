@@ -18,9 +18,11 @@ public class MedoraMetricsService {
     private static final String TAG_LEVEL = "level";
 
     private final MeterRegistry meterRegistry;
+    private final EvolutionMetrics evolutionMetrics;
 
-    public MedoraMetricsService(MeterRegistry meterRegistry) {
+    public MedoraMetricsService(MeterRegistry meterRegistry, EvolutionMetrics evolutionMetrics) {
         this.meterRegistry = meterRegistry;
+        this.evolutionMetrics = evolutionMetrics;
     }
 
     public void recordAgentTrace(String intentType, String routeMode, String status, long latencyMs) {
@@ -46,6 +48,7 @@ public class MedoraMetricsService {
                         Tag.of(TAG_STATUS, normalize(status, "UNKNOWN"))
                 )
         ).increment();
+        evolutionMetrics.recordToolCall("LOCAL", status, Duration.ZERO);
     }
 
     /**
@@ -93,6 +96,7 @@ public class MedoraMetricsService {
                         Tag.of("result", normalize(result, "UNKNOWN"))
                 )
         ).increment();
+        evolutionMetrics.recordAppointmentTransition(actionType, result);
     }
 
     public void recordAuditEvent(String operatorType, String actionType, String resourceType) {
