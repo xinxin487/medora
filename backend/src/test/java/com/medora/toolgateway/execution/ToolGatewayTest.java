@@ -4,6 +4,7 @@ import com.medora.toolgateway.descriptor.*;
 import com.medora.toolgateway.policy.ToolAuthorizationPolicy;
 import com.medora.toolgateway.policy.ToolConfirmationPolicy;
 import com.medora.toolgateway.registry.GatewayToolRegistry;
+import com.medora.toolgateway.audit.ToolAuditRecorder;
 import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.*;
@@ -42,6 +43,22 @@ class ToolGatewayTest {
         var context = new GatewayExecutionContext(1L, List.of("USER"), "booking", "c", "t", "r", null);
         assertThat(gateway.execute(new GatewayToolRequest(descriptor.qualifiedName(), Map.of(), context)).status()).isEqualTo(GatewayToolResult.Status.TIMEOUT);
         assertThat((System.nanoTime() - started) / 1_000_000).isLessThan(150);
+    }
+    @Test void recordsTheFinalGatewayOutcomeWithoutChangingItWhenAuditFails() {
+        ToolDescriptor descriptor = descriptor();
+        AtomicBoolean audited = new AtomicBoolean();
+        ToolAuditRecorder failingAudit = (tool, request, result, durationMs) -> {
+            audited.set(result.status() == GatewayToolResult.Status.SUCCESS && durationMs >= 0);
+            throw new IllegalStateException("audit unavailable");
+        };
+        ToolGateway gateway = new ToolGateway(new GatewayToolRegistry(List.of(descriptor)), new ToolAuthorizationPolicy(), new ToolConfirmationPolicy(),
+                Map.of(descriptor.qualifiedName(), request -> Map.of("ok", true)), failingAudit);
+        var context = new GatewayExecutionContext(1L, List.of("USER"), "booking", "c", "t", "r", null);
+
+        GatewayToolResult result = gateway.execute(new GatewayToolRequest(descriptor.qualifiedName(), Map.of(), context));
+
+        assertThat(result.status()).isEqualTo(GatewayToolResult.Status.SUCCESS);
+        assertThat(audited).isTrue();
     }
     private ToolDescriptor descriptor() { return new ToolDescriptor("local.queryScheduleSlots", "1", "", ToolSourceType.LOCAL, Map.of(), Map.of(), ToolRisk.LOW, List.of("USER"), List.of("booking"), Duration.ofSeconds(1), true, false, "INTERNAL"); }
 }
