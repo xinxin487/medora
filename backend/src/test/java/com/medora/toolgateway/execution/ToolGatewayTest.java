@@ -101,5 +101,31 @@ class ToolGatewayTest {
         assertThat(result.status()).isEqualTo(GatewayToolResult.Status.FAILED);
         assertThat(attempts).hasValue(1);
     }
+    @Test void rejectsCallsWhileTheToolCircuitIsOpen() {
+        ToolDescriptor descriptor = new ToolDescriptor("local.unstable", "1", "", ToolSourceType.LOCAL, Map.of(), Map.of(), ToolRisk.LOW, List.of("USER"), List.of("booking"), Duration.ofSeconds(1), false, false, "INTERNAL");
+        ToolGateway gateway = new ToolGateway(new GatewayToolRegistry(List.of(descriptor)), new ToolAuthorizationPolicy(), new ToolConfirmationPolicy(),
+                Map.of(descriptor.qualifiedName(), request -> { throw new IllegalStateException("down"); }));
+        var context = new GatewayExecutionContext(1L, List.of("USER"), "booking", "c", "t", "r", null);
+        for (int ignored = 0; ignored < 3; ignored++) gateway.execute(new GatewayToolRequest(descriptor.qualifiedName(), Map.of(), context));
+
+        GatewayToolResult result = gateway.execute(new GatewayToolRequest(descriptor.qualifiedName(), Map.of(), context));
+
+        assertThat(result.status()).isEqualTo(GatewayToolResult.Status.UNAVAILABLE);
+        assertThat(result.errorCode()).isEqualTo(GatewayErrorCode.CIRCUIT_OPEN);
+    }
+    @Test void doesNotConsumeHalfOpenProbeForARequestMissingConfirmation() {
+        ToolDescriptor descriptor = new ToolDescriptor("local.confirmed", "1", "", ToolSourceType.LOCAL, Map.of(), Map.of(), ToolRisk.HIGH, List.of("USER"), List.of("booking"), Duration.ofSeconds(1), false, true, "INTERNAL");
+        ToolCircuitBreakerRegistry circuit = new ToolCircuitBreakerRegistry(1, Duration.ZERO, java.time.Clock.systemUTC());
+        circuit.recordFailure(descriptor.qualifiedName());
+        ToolGateway gateway = new ToolGateway(new GatewayToolRegistry(List.of(descriptor)), new ToolAuthorizationPolicy(), new ToolConfirmationPolicy(),
+                Map.of(descriptor.qualifiedName(), request -> Map.of("ok", true)), circuit);
+        var withoutConfirmation = new GatewayExecutionContext(1L, List.of("USER"), "booking", "c", "t", "r", null);
+        var confirmed = withoutConfirmation.withConfirmationActionId("confirmed-1");
+
+        assertThat(gateway.execute(new GatewayToolRequest(descriptor.qualifiedName(), Map.of(), withoutConfirmation)).status())
+                .isEqualTo(GatewayToolResult.Status.CONFIRMATION_REQUIRED);
+        assertThat(gateway.execute(new GatewayToolRequest(descriptor.qualifiedName(), Map.of(), confirmed)).status())
+                .isEqualTo(GatewayToolResult.Status.SUCCESS);
+    }
     private ToolDescriptor descriptor() { return new ToolDescriptor("local.queryScheduleSlots", "1", "", ToolSourceType.LOCAL, Map.of(), Map.of(), ToolRisk.LOW, List.of("USER"), List.of("booking"), Duration.ofSeconds(1), true, false, "INTERNAL"); }
 }
