@@ -128,4 +128,41 @@ public class ScheduleSlotEntity extends BaseEntity {
             status = "OPEN";
         }
     }
+
+    public void holdOne() {
+        if (!"OPEN".equals(status) || availableQuota == null || availableQuota <= 0) {
+            throw new IllegalStateException("schedule slot is not available for hold");
+        }
+        availableQuota--;
+        reservedQuota = reservedQuota == null ? 1 : reservedQuota + 1;
+        refreshAvailabilityStatus();
+    }
+
+    public void confirmHeldOne() {
+        if (reservedQuota == null || reservedQuota <= 0) {
+            throw new IllegalStateException("schedule slot has no held quota to confirm");
+        }
+        reservedQuota--;
+        refreshAvailabilityStatus();
+    }
+
+    public void releaseHeldOne() {
+        if (reservedQuota == null || reservedQuota <= 0) {
+            throw new IllegalStateException("schedule slot has no held quota to release");
+        }
+        reservedQuota--;
+        availableQuota = availableQuota == null ? 1 : availableQuota + 1;
+        if (totalQuota != null && availableQuota > totalQuota) {
+            throw new IllegalStateException("schedule slot quota invariant violated");
+        }
+        refreshAvailabilityStatus();
+    }
+
+    private void refreshAvailabilityStatus() {
+        if (availableQuota != null && availableQuota == 0 && "OPEN".equals(status)) {
+            status = "FULL";
+        } else if (availableQuota != null && availableQuota > 0 && "FULL".equals(status)) {
+            status = "OPEN";
+        }
+    }
 }
