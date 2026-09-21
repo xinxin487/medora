@@ -60,5 +60,46 @@ class ToolGatewayTest {
         assertThat(result.status()).isEqualTo(GatewayToolResult.Status.SUCCESS);
         assertThat(audited).isTrue();
     }
+    @Test void rejectsAdapterOutputThatDoesNotMatchDescriptorSchema() {
+        ToolDescriptor descriptor = new ToolDescriptor("local.checked", "1", "", ToolSourceType.LOCAL, Map.of(),
+                Map.of("type", "object", "additionalProperties", false, "required", List.of("ok"),
+                        "properties", Map.of("ok", Map.of("type", "boolean"))),
+                ToolRisk.LOW, List.of("USER"), List.of("booking"), Duration.ofSeconds(1), true, false, "INTERNAL");
+        ToolGateway gateway = new ToolGateway(new GatewayToolRegistry(List.of(descriptor)), new ToolAuthorizationPolicy(), new ToolConfirmationPolicy(),
+                Map.of(descriptor.qualifiedName(), request -> Map.of("unexpected", true)));
+        var context = new GatewayExecutionContext(1L, List.of("USER"), "booking", "c", "t", "r", null);
+
+        GatewayToolResult result = gateway.execute(new GatewayToolRequest(descriptor.qualifiedName(), Map.of(), context));
+
+        assertThat(result.status()).isEqualTo(GatewayToolResult.Status.FAILED);
+        assertThat(result.errorCode()).isEqualTo(GatewayErrorCode.VALIDATION_FAILED);
+    }
+    @Test void retriesAnIdempotentToolOnceAfterTransientAdapterFailure() {
+        ToolDescriptor descriptor = descriptor();
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        ToolGateway gateway = new ToolGateway(new GatewayToolRegistry(List.of(descriptor)), new ToolAuthorizationPolicy(), new ToolConfirmationPolicy(),
+                Map.of(descriptor.qualifiedName(), request -> {
+                    if (attempts.incrementAndGet() == 1) throw new IllegalStateException("transient");
+                    return Map.of("ok", true);
+                }));
+        var context = new GatewayExecutionContext(1L, List.of("USER"), "booking", "c", "t", "r", null);
+
+        GatewayToolResult result = gateway.execute(new GatewayToolRequest(descriptor.qualifiedName(), Map.of(), context));
+
+        assertThat(result.status()).isEqualTo(GatewayToolResult.Status.SUCCESS);
+        assertThat(attempts).hasValue(2);
+    }
+    @Test void neverRetriesANonIdempotentToolAfterAdapterFailure() {
+        ToolDescriptor descriptor = new ToolDescriptor("local.write", "1", "", ToolSourceType.LOCAL, Map.of(), Map.of(), ToolRisk.HIGH, List.of("USER"), List.of("booking"), Duration.ofSeconds(1), false, false, "INTERNAL");
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        ToolGateway gateway = new ToolGateway(new GatewayToolRegistry(List.of(descriptor)), new ToolAuthorizationPolicy(), new ToolConfirmationPolicy(),
+                Map.of(descriptor.qualifiedName(), request -> { attempts.incrementAndGet(); throw new IllegalStateException("transient"); }));
+        var context = new GatewayExecutionContext(1L, List.of("USER"), "booking", "c", "t", "r", null);
+
+        GatewayToolResult result = gateway.execute(new GatewayToolRequest(descriptor.qualifiedName(), Map.of(), context));
+
+        assertThat(result.status()).isEqualTo(GatewayToolResult.Status.FAILED);
+        assertThat(attempts).hasValue(1);
+    }
     private ToolDescriptor descriptor() { return new ToolDescriptor("local.queryScheduleSlots", "1", "", ToolSourceType.LOCAL, Map.of(), Map.of(), ToolRisk.LOW, List.of("USER"), List.of("booking"), Duration.ofSeconds(1), true, false, "INTERNAL"); }
 }

@@ -34,11 +34,24 @@ import org.springframework.beans.factory.annotation.Autowired;
             call = () -> bean.execute(request);
         }
         java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
-        java.util.concurrent.Future<Object> future = executor.submit(call);
         try {
-            Object data = future.get(descriptor.timeout().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
-            return finish(descriptor, request, GatewayToolResult.success(data), started);
-        } catch (java.util.concurrent.TimeoutException ex) { future.cancel(true); return finish(descriptor, request, GatewayToolResult.failure(GatewayToolResult.Status.TIMEOUT, GatewayErrorCode.DEPENDENCY_TIMEOUT, "tool execution timed out", descriptor.idempotent()), started);
+            for (int attempt = 0; attempt < (descriptor.idempotent() ? 2 : 1); attempt++) {
+                java.util.concurrent.Future<Object> future = executor.submit(call);
+                try {
+                    Object data = future.get(descriptor.timeout().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+                    if (!descriptor.outputSchema().isEmpty() && !validator.validateValue(descriptor.outputSchema(), data).isEmpty()) {
+                        return finish(descriptor, request, GatewayToolResult.failure(GatewayToolResult.Status.FAILED, GatewayErrorCode.VALIDATION_FAILED, "tool result invalid", false), started);
+                    }
+                    return finish(descriptor, request, GatewayToolResult.success(data), started);
+                } catch (java.util.concurrent.TimeoutException ex) {
+                    future.cancel(true);
+                    return finish(descriptor, request, GatewayToolResult.failure(GatewayToolResult.Status.TIMEOUT, GatewayErrorCode.DEPENDENCY_TIMEOUT, "tool execution timed out", descriptor.idempotent()), started);
+                } catch (java.util.concurrent.ExecutionException ex) {
+                    if (attempt == 0 && descriptor.idempotent()) continue;
+                    return finish(descriptor, request, GatewayToolResult.failure(GatewayToolResult.Status.FAILED, GatewayErrorCode.FAILED, "tool execution failed", descriptor.idempotent()), started);
+                }
+            }
+            return finish(descriptor, request, GatewayToolResult.failure(GatewayToolResult.Status.FAILED, GatewayErrorCode.FAILED, "tool execution failed", descriptor.idempotent()), started);
         } catch (Exception ex) { return finish(descriptor, request, GatewayToolResult.failure(GatewayToolResult.Status.FAILED, GatewayErrorCode.FAILED, "tool execution failed", descriptor.idempotent()), started);
         } finally { executor.shutdownNow(); lease.close(); }
     }

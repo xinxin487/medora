@@ -31,9 +31,12 @@ public class ToolSchemaValidator {
                 .stream().map(Object::toString).toList();
     }
     public List<String> validate(Map<String, Object> schemaDefinition, Map<String, Object> arguments) {
+        return validateValue(schemaDefinition, arguments);
+    }
+    public List<String> validateValue(Map<String, Object> schemaDefinition, Object value) {
         Schema compiled = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
                 .getSchema(objectMapper.valueToTree(schemaDefinition));
-        return compiled.validate(objectMapper.valueToTree(arguments), context ->
+        return compiled.validate(objectMapper.valueToTree(value), context ->
                 context.executionConfig(config -> config.formatAssertionsEnabled(true)))
                 .stream().map(Object::toString).toList();
     }
