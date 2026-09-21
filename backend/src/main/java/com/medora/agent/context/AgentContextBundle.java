@@ -6,7 +6,7 @@ import java.util.Map;
 public record AgentContextBundle(ContextProfile profile, ContextBudget budget, String currentMessage,
                                  String summary, List<String> recentTurns, List<String> memories,
                                  List<String> ragEvidence, Map<String, Object> businessState,
-                                 List<String> decisions) {
+                                 List<ContextDecision> decisions) {
     public AgentContextBundle {
         recentTurns = recentTurns == null ? List.of() : List.copyOf(recentTurns);
         memories = memories == null ? List.of() : List.copyOf(memories);
