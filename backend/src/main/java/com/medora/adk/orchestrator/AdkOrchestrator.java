@@ -16,11 +16,17 @@ import com.medora.agent.application.IntentDecision;
 import com.medora.agent.application.RouteMode;
 import com.medora.chat.domain.ConversationEntity;
 import com.medora.chat.repository.ConversationRepository;
+import com.medora.agent.context.AgentContextBundle;
+import com.medora.agent.context.ContextBuildRequest;
+import com.medora.agent.context.ContextBuilder;
+import com.medora.common.config.EvolutionProperties;
 import com.medora.common.metrics.MedoraMetricsService;
+import com.medora.common.metrics.EvolutionMetrics;
 import io.reactivex.rxjava3.core.Flowable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.LinkedHashMap;
@@ -64,6 +70,9 @@ public class AdkOrchestrator {
     private final AdkEventToSseAdapter sseAdapter;
     private final ObjectMapper objectMapper;
     private final MedoraMetricsService metricsService;
+    private final EvolutionProperties evolutionProperties;
+    private final ContextBuilder contextBuilder;
+    private final EvolutionMetrics evolutionMetrics;
 
     public AdkOrchestrator(Runner adkRunner,
                            BaseSessionService sessionService,
@@ -71,12 +80,41 @@ public class AdkOrchestrator {
                            AdkEventToSseAdapter sseAdapter,
                            ObjectMapper objectMapper,
                            MedoraMetricsService metricsService) {
+        this(adkRunner, sessionService, conversationRepository, sseAdapter, objectMapper, metricsService,
+                new EvolutionProperties(false, false, false, false, false), null);
+    }
+
+    public AdkOrchestrator(Runner adkRunner,
+                           BaseSessionService sessionService,
+                           ConversationRepository conversationRepository,
+                           AdkEventToSseAdapter sseAdapter,
+                           ObjectMapper objectMapper,
+                           MedoraMetricsService metricsService,
+                           EvolutionProperties evolutionProperties,
+                           ContextBuilder contextBuilder) {
+        this(adkRunner, sessionService, conversationRepository, sseAdapter, objectMapper, metricsService,
+                evolutionProperties, contextBuilder, null);
+    }
+
+    @Autowired
+    public AdkOrchestrator(Runner adkRunner,
+                           BaseSessionService sessionService,
+                           ConversationRepository conversationRepository,
+                           AdkEventToSseAdapter sseAdapter,
+                           ObjectMapper objectMapper,
+                           MedoraMetricsService metricsService,
+                           EvolutionProperties evolutionProperties,
+                           ContextBuilder contextBuilder,
+                           EvolutionMetrics evolutionMetrics) {
         this.adkRunner = adkRunner;
         this.sessionService = sessionService;
         this.conversationRepository = conversationRepository;
         this.sseAdapter = sseAdapter;
         this.objectMapper = objectMapper;
         this.metricsService = metricsService;
+        this.evolutionProperties = evolutionProperties;
+        this.contextBuilder = contextBuilder;
+        this.evolutionMetrics = evolutionMetrics;
     }
 
     /**
@@ -189,6 +227,31 @@ public class AdkOrchestrator {
         state.put(AdkToolContextResolver.KEY_USER_ACCOUNT_ID, command.userAccountId());
         state.put(AdkToolContextResolver.KEY_USER_MESSAGE, command.message());
         state.put(AdkToolContextResolver.KEY_TRACE_ID, command.traceId());
+        if (evolutionProperties.contextBuilder() && contextBuilder != null) {
+            try {
+                AgentContextBundle bundle = contextBuilder.build(new ContextBuildRequest(
+                        command.userAccountId(), command.conversationId(), command.message(), "GENERAL", 8_000));
+                state.put("context.profile", bundle.profile().name());
+                state.put("context.summary", bundle.summary());
+                state.put("context.recent", bundle.recentTurns());
+                state.put("context.memories", bundle.memories());
+                state.put("context.rag", bundle.ragEvidence());
+                state.put("context.business", bundle.businessState());
+                Map<String, Integer> reasonCounts = new LinkedHashMap<>();
+                bundle.decisions().forEach(decision -> reasonCounts.merge(decision.reasonCode(), 1, Integer::sum));
+                state.put("context.diagnostics", Map.of(
+                        "profile", bundle.profile().name(),
+                        "budget", Map.of("allocated", bundle.budget().totalAllocated()),
+                        "reasonCounts", reasonCounts,
+                        "itemFingerprints", bundle.decisions().stream().map(decision -> decision.fingerprint()).filter(value -> value != null && !value.isBlank()).toList(),
+                        "degraded", false));
+            } catch (RuntimeException ex) {
+                log.warn("context builder degraded. traceId={}", command.traceId(), ex);
+                if (evolutionMetrics != null) {
+                    evolutionMetrics.recordContextBuild("GENERAL", "DEGRADED");
+                }
+            }
+        }
         sessionService.createSession(adkRunner.appName(), userId, state, sessionId)
                 .blockingGet();
     }

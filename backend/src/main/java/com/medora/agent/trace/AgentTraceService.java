@@ -1,5 +1,6 @@
 package com.medora.agent.trace;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medora.chat.domain.ChatMessageEntity;
 import com.medora.chat.domain.ConversationEntity;
 import com.medora.common.metrics.MedoraMetricsService;
@@ -11,16 +12,19 @@ public class AgentTraceService {
 
     private final AgentTraceRepository agentTraceRepository;
     private final MedoraMetricsService medoraMetricsService;
+    private final ObjectMapper objectMapper;
 
     public AgentTraceService(AgentTraceRepository agentTraceRepository,
-                             MedoraMetricsService medoraMetricsService) {
+                             MedoraMetricsService medoraMetricsService,
+                             ObjectMapper objectMapper) {
         this.agentTraceRepository = agentTraceRepository;
         this.medoraMetricsService = medoraMetricsService;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
     public void record(AgentTraceRecord record) {
-        agentTraceRepository.save(AgentTraceEntity.of(
+        AgentTraceEntity entity = AgentTraceEntity.of(
                 record.traceId(),
                 record.conversation(),
                 record.message(),
@@ -34,7 +38,17 @@ public class AgentTraceService {
                 record.safetyEventsJson(),
                 record.hallucinationRisk(),
                 record.riskFactorsJson()
-        ));
+        );
+        Object diagnostic = record.conversation().getSessionState() == null ? null
+                : record.conversation().getSessionState().get("context.diagnostics");
+        if (diagnostic != null) {
+            try {
+                entity.setContextDiagnosticJson(objectMapper.writeValueAsString(diagnostic));
+            } catch (Exception ignored) {
+                entity.setContextDiagnosticJson("{}");
+            }
+        }
+        agentTraceRepository.save(entity);
         medoraMetricsService.recordAgentTrace(
                 record.intentType(),
                 record.routeMode(),
