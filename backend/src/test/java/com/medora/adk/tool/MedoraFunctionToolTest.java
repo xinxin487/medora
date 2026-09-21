@@ -59,6 +59,35 @@ class MedoraFunctionToolTest {
     }
 
     @Test
+    void everyRegisteredBusinessToolUsesOnlyItsVersionedGatewayRouteWhenEnabled() {
+        ToolSchemaRegistry schemas = new ToolSchemaRegistry();
+        Map<String, String> toolAgents = Map.of(
+                ToolNames.QUERY_DEPARTMENTS, "booking",
+                ToolNames.QUERY_DOCTORS, "booking",
+                ToolNames.QUERY_SCHEDULE_SLOTS, "booking",
+                ToolNames.GET_USER_APPOINTMENTS, "booking",
+                ToolNames.BOOK_APPOINTMENT, "booking",
+                ToolNames.CANCEL_APPOINTMENT, "booking",
+                ToolNames.SEARCH_KNOWLEDGE, "knowledge"
+        );
+        toolAgents.forEach((toolName, agentName) -> {
+            ToolDefinition legacy = mock(ToolDefinition.class);
+            ToolGateway gateway = mock(ToolGateway.class);
+            when(gateway.execute(any())).thenReturn(GatewayToolResult.success(Map.of()));
+            MedoraFunctionTool tool = new MedoraFunctionTool(legacy, schemas.get(toolName), gateway, true, agentName);
+
+            Map<String, Object> result = tool.runAsync(Map.of(), stubToolContext()).blockingGet();
+
+            ArgumentCaptor<GatewayToolRequest> request = ArgumentCaptor.forClass(GatewayToolRequest.class);
+            verify(gateway).execute(request.capture());
+            assertThat(result.get("status")).isEqualTo("SUCCESS");
+            assertThat(request.getValue().qualifiedToolName()).isEqualTo("local." + toolName + "@1");
+            assertThat(request.getValue().context().agentName()).isEqualTo(agentName);
+            verifyNoInteractions(legacy);
+        });
+    }
+
+    @Test
     void declarationExposesNameDescriptionAndParameters() {
         ToolDefinition def = stubDefinition(ToolNames.QUERY_DEPARTMENTS, "查询可挂号科室");
         ToolSchemaDescriptor descriptor = new ToolSchemaRegistry().get(ToolNames.QUERY_DEPARTMENTS);
