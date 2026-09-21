@@ -8,8 +8,10 @@ import com.google.adk.tools.ToolContext;
 import com.google.genai.types.FunctionDeclaration;
 import com.medora.agent.tool.ToolDefinition;
 import com.medora.agent.tool.ToolExecutionResult;
+import com.medora.agent.tool.ToolExecutionContext;
 import com.medora.agent.tool.ToolRegistry;
 import com.medora.common.exception.BusinessException;
+import com.medora.toolgateway.execution.*;
 import io.reactivex.rxjava3.core.Single;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,11 +65,22 @@ public final class MedoraFunctionTool extends BaseTool {
 
     private final ToolDefinition toolDefinition;
     private final ToolSchemaDescriptor descriptor;
+    private final ToolGateway gateway;
+    private final boolean gatewayEnabled;
+    private final String agentName;
 
     public MedoraFunctionTool(ToolDefinition toolDefinition, ToolSchemaDescriptor descriptor) {
         super(descriptor.name(), descriptor.description());
         this.toolDefinition = Objects.requireNonNull(toolDefinition);
         this.descriptor = Objects.requireNonNull(descriptor);
+        this.gateway = null; this.gatewayEnabled = false; this.agentName = null;
+    }
+
+    public MedoraFunctionTool(ToolDefinition toolDefinition, ToolSchemaDescriptor descriptor,
+                              ToolGateway gateway, boolean gatewayEnabled, String agentName) {
+        super(descriptor.name(), descriptor.description());
+        this.toolDefinition = Objects.requireNonNull(toolDefinition); this.descriptor = Objects.requireNonNull(descriptor);
+        this.gateway = gateway; this.gatewayEnabled = gatewayEnabled; this.agentName = agentName;
     }
 
     /**
@@ -94,6 +107,18 @@ public final class MedoraFunctionTool extends BaseTool {
     @Override
     public Single<Map<String, Object>> runAsync(Map<String, Object> args, ToolContext toolContext) {
         return Single.fromCallable(() -> {
+            if (gatewayEnabled && gateway != null) {
+                ToolExecutionContext legacyContext = AdkToolContextResolver.resolve(toolContext);
+                GatewayToolResult gatewayResult = gateway.execute(new GatewayToolRequest("local." + descriptor.name() + "@1",
+                        args == null ? Map.of() : args, new GatewayExecutionContext(legacyContext.userAccountId(), java.util.List.of("USER"), agentName,
+                        null, legacyContext.traceId(), java.util.UUID.randomUUID().toString(), null)));
+                Map<String, Object> normalized = new HashMap<>();
+                normalized.put("status", gatewayResult.status().name());
+                if (gatewayResult.data() != null) normalized.put("data", RESULT_NORMALIZER.valueToTree(gatewayResult.data()));
+                if (gatewayResult.errorCode() != null) normalized.put("errorCode", gatewayResult.errorCode().name());
+                if (gatewayResult.message() != null) normalized.put("errorMessage", gatewayResult.message());
+                return normalized;
+            }
             ToolExecutionResult result;
             try {
                 result = toolDefinition.execute(args == null ? Map.of() : args,

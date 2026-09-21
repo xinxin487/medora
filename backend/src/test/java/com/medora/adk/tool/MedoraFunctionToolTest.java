@@ -10,6 +10,7 @@ import com.medora.agent.tool.ToolExecutionContext;
 import com.medora.agent.tool.ToolExecutionResult;
 import com.medora.agent.tool.ToolNames;
 import com.medora.agent.tool.ToolRegistry;
+import com.medora.toolgateway.execution.*;
 import io.reactivex.rxjava3.core.Single;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +27,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
  * MedoraFunctionTool 单测:验证 BaseTool 桥接行为正确。
@@ -39,6 +41,19 @@ import static org.mockito.Mockito.when;
  *  - create() 工厂方法:从 registry 拿到 ToolDefinition,包装成功
  */
 class MedoraFunctionToolTest {
+
+    @Test
+    void gatewayEnabledRoutesInvocationWithoutCallingLegacyDefinition() {
+        ToolDefinition legacy = mock(ToolDefinition.class);
+        ToolSchemaDescriptor descriptor = new ToolSchemaRegistry().get(ToolNames.SEARCH_KNOWLEDGE);
+        ToolGateway gateway = mock(ToolGateway.class);
+        when(gateway.execute(any())).thenReturn(GatewayToolResult.success(Map.of("items", 1)));
+        MedoraFunctionTool tool = new MedoraFunctionTool(legacy, descriptor, gateway, true, "knowledge");
+        Map<String, Object> output = tool.runAsync(Map.of("query", "hours"), stubToolContext()).blockingGet();
+        assertThat(output.get("status")).isEqualTo("SUCCESS");
+        verify(gateway).execute(any());
+        verifyNoInteractions(legacy);
+    }
 
     @Test
     void declarationExposesNameDescriptionAndParameters() {
