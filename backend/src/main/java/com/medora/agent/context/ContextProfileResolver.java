@@ -1,7 +1,9 @@
 package com.medora.agent.context;
 
 import java.util.Locale;
+import org.springframework.stereotype.Component;
 
+@Component
 public class ContextProfileResolver {
     public ContextProfile resolve(String message, String sceneType) {
         String text = (message == null ? "" : message).toLowerCase(Locale.ROOT);

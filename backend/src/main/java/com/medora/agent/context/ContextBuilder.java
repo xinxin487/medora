@@ -2,7 +2,9 @@ package com.medora.agent.context;
 
 import com.medora.memory.governance.MemorySelector;
 import java.util.*;
+import org.springframework.stereotype.Component;
 
+@Component
 public class ContextBuilder {
     private final ContextProfileResolver resolver; private final TokenBudgetAllocator allocator; private final List<ContextProvider> providers; private final MemorySelector selector = new MemorySelector();
     public ContextBuilder(ContextProfileResolver resolver, TokenBudgetAllocator allocator, List<ContextProvider> providers) { this.resolver = resolver; this.allocator = allocator; this.providers = List.copyOf(providers); }

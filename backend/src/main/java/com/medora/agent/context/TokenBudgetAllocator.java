@@ -1,5 +1,8 @@
 package com.medora.agent.context;
 
+import org.springframework.stereotype.Component;
+
+@Component
 public class TokenBudgetAllocator {
     public ContextBudget allocate(ContextProfile profile, int maxTokens) {
         int total = Math.max(0, maxTokens);
