@@ -57,6 +57,12 @@ logging:
 
 medora:
   phase: phase-8
+  evolution:
+    context-builder: ${FEATURE_CONTEXT_BUILDER:false}
+    layered-rag: ${FEATURE_LAYERED_RAG:false}
+    tool-gateway: ${FEATURE_TOOL_GATEWAY:false}
+    a2ui-appointment: ${FEATURE_A2UI_APPOINTMENT:false}
+    mcp: ${FEATURE_MCP:false}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:*,http://127.0.0.1:*}
   rag:
