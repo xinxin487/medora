@@ -2,6 +2,7 @@ package com.medora.knowledge.service;
 
 import com.medora.knowledge.config.RagProperties;
 import com.medora.knowledge.repository.KnowledgeChunkSearchResult;
+import com.medora.knowledge.repository.KnowledgeChunkRepository;
 import com.medora.knowledge.retriever.HybridRetriever;
 import com.medora.knowledge.retriever.RetrievalResultAssembler;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,20 @@ class RetrievalServiceTest {
 
         assertEquals(1, results.size());
         assertEquals("挂号取消规则测试文档", results.getFirst().sectionPath());
+    }
+
+    @Test
+    void shouldIncludeParentContextWithoutChangingChildCitation() {
+        HybridRetriever hybridRetriever = mock(HybridRetriever.class);
+        KnowledgeChunkRepository chunks = mock(KnowledgeChunkRepository.class);
+        RetrievalService service = new RetrievalService(hybridRetriever, new RetrievalResultAssembler(), ragProperties, chunks);
+        when(hybridRetriever.retrieve("取消挂号", null, 5)).thenReturn(List.of(cancelAppointmentRow()));
+        when(chunks.findParentContentByChildId(1L)).thenReturn(java.util.Optional.of("完整的退号流程说明"));
+
+        RetrievalResult result = service.retrieve("取消挂号", null, 5).getFirst();
+
+        assertEquals(1L, result.chunkId());
+        assertTrue(result.context().contains("完整的退号流程说明"));
     }
 
     private KnowledgeChunkSearchResult cancelAppointmentRow() {

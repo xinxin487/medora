@@ -4,9 +4,11 @@ import com.medora.knowledge.api.response.KnowledgeSearchItem;
 import com.medora.knowledge.api.response.KnowledgeSearchResponse;
 import com.medora.knowledge.config.RagProperties;
 import com.medora.knowledge.repository.KnowledgeChunkSearchRow;
+import com.medora.knowledge.repository.KnowledgeChunkRepository;
 import com.medora.knowledge.retriever.HybridRetriever;
 import com.medora.knowledge.retriever.RetrievalResultAssembler;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -19,13 +21,23 @@ public class RetrievalService {
     private final HybridRetriever hybridRetriever;
     private final RetrievalResultAssembler retrievalResultAssembler;
     private final RagProperties ragProperties;
+    private final KnowledgeChunkRepository chunks;
 
     public RetrievalService(HybridRetriever hybridRetriever,
                             RetrievalResultAssembler retrievalResultAssembler,
                             RagProperties ragProperties) {
+        this(hybridRetriever, retrievalResultAssembler, ragProperties, null);
+    }
+
+    @Autowired
+    public RetrievalService(HybridRetriever hybridRetriever,
+                            RetrievalResultAssembler retrievalResultAssembler,
+                            RagProperties ragProperties,
+                            KnowledgeChunkRepository chunks) {
         this.hybridRetriever = hybridRetriever;
         this.retrievalResultAssembler = retrievalResultAssembler;
         this.ragProperties = ragProperties;
+        this.chunks = chunks;
     }
 
     public KnowledgeSearchResponse searchForAdmin(String query, String bizScope, Integer topK) {
@@ -56,8 +68,12 @@ public class RetrievalService {
         QueryFeatures queryFeatures = QueryFeatures.from(normalizedQuery);
         return hybridRetriever.retrieve(normalizedQuery, bizScope, limit).stream()
                 .filter(row -> isRelevant(row, queryFeatures))
-                .map(retrievalResultAssembler::assemble)
+                .map(row -> retrievalResultAssembler.assemble(row, parentContent(row.getChunkId()), 800))
                 .toList();
+    }
+
+    private String parentContent(Long childId) {
+        return chunks == null ? null : chunks.findParentContentByChildId(childId).orElse(null);
     }
 
     private boolean isRelevant(KnowledgeChunkSearchRow row, QueryFeatures queryFeatures) {

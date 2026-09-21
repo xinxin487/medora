@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface KnowledgeChunkRepository extends JpaRepository<KnowledgeChunkEntity, Long> {
 
@@ -19,6 +20,14 @@ public interface KnowledgeChunkRepository extends JpaRepository<KnowledgeChunkEn
     List<KnowledgeChunkEntity> findByDocumentOrderByChunkIndexAsc(KnowledgeDocumentEntity document);
 
     List<KnowledgeChunkEntity> findByDocumentAndChunkTypeOrderByChunkIndexAsc(KnowledgeDocumentEntity document, String chunkType);
+
+    @Query(value = """
+            select parent.content
+            from knowledge_chunk child
+            join knowledge_chunk parent on parent.id = child.parent_chunk_id
+            where child.id = :childId
+            """, nativeQuery = true)
+    Optional<String> findParentContentByChildId(@Param("childId") Long childId);
 
     @Modifying
     @Query(value = """
