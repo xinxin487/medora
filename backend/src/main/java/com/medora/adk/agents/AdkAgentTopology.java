@@ -15,6 +15,7 @@ import com.medora.common.config.EvolutionProperties;
 import com.medora.toolgateway.execution.ToolGateway;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
@@ -114,12 +115,17 @@ public class AdkAgentTopology {
         return tool(ToolNames.SEARCH_KNOWLEDGE, "knowledge");
     }
 
+    @Bean
+    public BaseTool adkTriageSearchKnowledgeTool() {
+        return tool(ToolNames.SEARCH_KNOWLEDGE, "triage");
+    }
+
     private MedoraFunctionTool tool(String name, String agent) {
         return new MedoraFunctionTool(toolRegistry.get(name), schemaRegistry.get(name), toolGateway, evolutionProperties.toolGateway(), agent);
     }
 
     @Bean
-    public LlmAgent triageAgent(BaseTool adkSearchKnowledgeTool) {
+    public LlmAgent triageAgent(@Qualifier("adkTriageSearchKnowledgeTool") BaseTool adkSearchKnowledgeTool) {
         return LlmAgent.builder()
                 .name("triage_agent")
                 .description("导诊助手:根据症状描述推荐就诊科室")
@@ -193,7 +199,7 @@ public class AdkAgentTopology {
     }
 
     @Bean
-    public LlmAgent knowledgeAgent(BaseTool adkSearchKnowledgeTool) {
+    public LlmAgent knowledgeAgent(@Qualifier("adkSearchKnowledgeTool") BaseTool adkSearchKnowledgeTool) {
         return LlmAgent.builder()
                 .name("knowledge_agent")
                 .description("知识助手:基于已发布知识库回答医学常识问题")

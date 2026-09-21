@@ -104,6 +104,14 @@ class AdkAgentTopologyTest {
     }
 
     @Test
+    void triageUsesItsOwnKnowledgeToolInstanceForGatewayAttribution() {
+        BaseTool triageTool = topology.adkTriageSearchKnowledgeTool();
+
+        assertThat(triageTool.name()).isEqualTo("searchKnowledge");
+        assertThat(triageTool).isNotSameAs(topology.adkSearchKnowledgeTool());
+    }
+
+    @Test
     void bookingAgentHasSixTools() {
         LlmAgent agent = topology.bookingAgent(
                 topology.adkQueryDepartmentsTool(),
