@@ -1,12 +1,11 @@
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM public.ecr.aws/docker/library/maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 COPY pom.xml .
-RUN mvn -q -DskipTests dependency:go-offline
+RUN --mount=type=cache,target=/root/.m2 mvn --batch-mode --no-transfer-progress -DskipTests dependency:go-offline
 COPY src src
-RUN mvn -q -DskipTests package
+RUN --mount=type=cache,target=/root/.m2 mvn --batch-mode --no-transfer-progress -DskipTests package
 
-FROM eclipse-temurin:21-jre
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+FROM public.ecr.aws/docker/library/eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /build/target/hospital-directory-mcp-1.0.0.jar app.jar
 EXPOSE 8080

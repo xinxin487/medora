@@ -1,10 +1,12 @@
 package com.medora.mcpdemo;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
+import io.modelcontextprotocol.spec.McpError;
 import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,8 +29,9 @@ public class HospitalDirectoryApplication {
     public static void main(String[] args) { SpringApplication.run(HospitalDirectoryApplication.class, args); }
 
     @Bean HttpServletStreamableServerTransportProvider mcpTransport(ObjectMapper mapper) {
+        ObjectMapper transportMapper = mapper.copy().addMixIn(McpError.class, McpErrorMixin.class);
         return HttpServletStreamableServerTransportProvider.builder().mcpEndpoint("/mcp")
-                .jsonMapper(new JacksonMcpJsonMapper(mapper)).disallowDelete(true).build();
+                .jsonMapper(new JacksonMcpJsonMapper(transportMapper)).disallowDelete(true).build();
     }
 
     @Bean McpSyncServer hospitalDirectoryMcpServer(HttpServletStreamableServerTransportProvider transport, ObjectMapper mapper,
@@ -78,4 +81,7 @@ public class HospitalDirectoryApplication {
             chain.doFilter(request, response);
         }
     }
+
+    @JsonIgnoreProperties({"cause", "stackTrace", "message", "suppressed", "localizedMessage"})
+    private abstract static class McpErrorMixin {}
 }

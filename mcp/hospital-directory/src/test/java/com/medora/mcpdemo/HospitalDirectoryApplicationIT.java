@@ -45,6 +45,23 @@ class HospitalDirectoryApplicationIT {
         assertThat(response.statusCode()).isEqualTo(403);
     }
 
+    @Test void doesNotExposeStackTracesInProtocolErrors() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/mcp"))
+                .POST(HttpRequest.BodyPublishers.ofString("{not-json"))
+                .header("Authorization", "Bearer test-token")
+                .header("Origin", "https://medora.example")
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json, text/event-stream")
+                .build();
+
+        HttpResponse<String> response = HttpClient.newHttpClient()
+                .send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("jsonRpcError")
+                .doesNotContain("stackTrace", "className", "HospitalDirectoryApplication");
+    }
+
     private HttpResponse<String> rawRequest(String authorization, String origin) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/mcp"))
                 .POST(HttpRequest.BodyPublishers.ofString("{}"))
