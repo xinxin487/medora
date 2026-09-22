@@ -307,6 +307,7 @@ public class AdkEventToSseAdapter {
             String status = success ? "SUCCESS" : "FAILED";
             String message = extractToolMessage(response, success);
             publishToolStatusSafely(emitter, toolName, status, message, cancelled);
+            publishA2uiSurfaceSafely(emitter, response, cancelled);
             metricsService.recordToolCall(toolName, status);
             toolEvents.add(buildToolEvent(toolName, status, response, message));
         }
@@ -365,6 +366,20 @@ public class AdkEventToSseAdapter {
             if (cancelled.get()) {
                 throw new UncheckedIOException(new IOException("stream cancelled"));
             }
+            throw new UncheckedIOException(ex);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void publishA2uiSurfaceSafely(SseEmitter emitter, Map<String, Object> response, AtomicBoolean cancelled) {
+        if (emitter == null) return;
+        Object data = response.get("data");
+        if (!(data instanceof Map<?, ?> dataMap) || !(dataMap.get("surface") instanceof Map<?, ?> rawSurface)) return;
+        try {
+            com.medora.a2ui.protocol.A2uiMessage surface = objectMapper.convertValue(rawSurface, com.medora.a2ui.protocol.A2uiMessage.class);
+            streamEventPublisher.publishA2ui(emitter, surface);
+        } catch (IOException ex) {
+            if (cancelled.get()) throw new UncheckedIOException(new IOException("stream cancelled"));
             throw new UncheckedIOException(ex);
         }
     }

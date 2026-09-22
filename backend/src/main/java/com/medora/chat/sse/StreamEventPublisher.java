@@ -1,5 +1,6 @@
 package com.medora.chat.sse;
 
+import com.medora.a2ui.protocol.A2uiMessage;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -60,6 +61,10 @@ public class StreamEventPublisher {
                 "code", code,
                 "message", message
         ));
+    }
+
+    public void publishA2ui(SseEmitter emitter, A2uiMessage message) throws IOException {
+        send(emitter, "a2ui", message);
     }
 
     private void send(SseEmitter emitter, String eventName, Object data) throws IOException {

@@ -5,6 +5,9 @@ import { FormEvent, startTransition, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api/client";
 import { useAuth } from "@/lib/hooks/use-auth";
 import { sendChatMessageStream } from "@/lib/sse/chat-stream";
+import { reduceA2uiSurface } from "@/lib/a2ui/reducer";
+import type { A2uiSurface } from "@/lib/a2ui/types";
+import { A2uiSurfaceCard } from "@/components/a2ui/a2ui-surface";
 import type { PageResponse } from "@/lib/types";
 import type {
   Conversation,
@@ -42,6 +45,7 @@ export default function AssistantPage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [a2uiSurfaces, setA2uiSurfaces] = useState<Record<string, A2uiSurface>>({});
 
   const activeConversation =
     conversations.find(
@@ -213,6 +217,9 @@ export default function AssistantPage() {
           if (streamEvent.event === "tool_status") {
             const ts = streamEvent.data as ToolStatusData;
             setStatus(ts.message ?? "工具执行中...");
+          }
+          if (streamEvent.event === "a2ui") {
+            setA2uiSurfaces((current) => reduceA2uiSurface(current, streamEvent.data));
           }
           if (streamEvent.event === "error") {
             setError(
@@ -405,6 +412,12 @@ export default function AssistantPage() {
         </header>
 
         <div className="min-h-[420px] space-y-4 overflow-y-auto px-5 py-5">
+          {Object.values(a2uiSurfaces).map((surface) => (
+            <A2uiSurfaceCard key={surface.surfaceId} surface={surface}
+              onResolved={(surfaceId) => setA2uiSurfaces((current) => reduceA2uiSurface(current, {
+                event: "deleteSurface", surfaceId, rootId: "", components: [], dataModel: {},
+              }))} />
+          ))}
           {messages.length === 0 ? (
             <div className="space-y-4">
               <div className="rounded-[1.5rem] border border-[rgba(20,42,39,0.08)] bg-[rgba(237,243,238,0.6)] px-5 py-6">

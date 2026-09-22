@@ -6,8 +6,10 @@ import com.medora.agent.tool.ToolExecutionContext;
 import com.medora.agent.tool.ToolExecutionResult;
 import com.medora.agent.tool.ToolNames;
 import com.medora.agent.tool.ToolRiskLevel;
-import com.medora.appointment.api.request.CreateAppointmentRequest;
-import com.medora.appointment.service.AppointmentCommandService;
+import com.medora.a2ui.service.A2uiActionService;
+import com.medora.a2ui.service.AppointmentSurfaceFactory;
+import com.medora.appointment.hold.AppointmentHoldRepository;
+import com.medora.appointment.hold.AppointmentHoldService;
 import com.medora.common.exception.BusinessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -17,10 +19,14 @@ import java.util.Map;
 @Component
 public class BookAppointmentTool implements ToolDefinition {
 
-    private final AppointmentCommandService appointmentCommandService;
+    private final AppointmentHoldService holds;
+    private final AppointmentHoldRepository holdRepository;
+    private final A2uiActionService actions;
+    private final AppointmentSurfaceFactory surfaces;
 
-    public BookAppointmentTool(AppointmentCommandService appointmentCommandService) {
-        this.appointmentCommandService = appointmentCommandService;
+    public BookAppointmentTool(AppointmentHoldService holds, AppointmentHoldRepository holdRepository,
+                               A2uiActionService actions, AppointmentSurfaceFactory surfaces) {
+        this.holds = holds; this.holdRepository = holdRepository; this.actions = actions; this.surfaces = surfaces;
     }
 
     @Override
@@ -46,13 +52,13 @@ public class BookAppointmentTool implements ToolDefinition {
                     "预约需要明确 slotId");
         }
         String idempotencyKey = "AGT-" + compact(context.traceId(), 24) + "-" + compact(slotId, 12);
-        var result = appointmentCommandService.createForUser(
-                context.userAccountId(),
-                new CreateAppointmentRequest(slotId, "Agent 对话预约"),
-                idempotencyKey,
-                "AGENT"
-        );
-        return ToolExecutionResult.success(name(), result, "预约已提交，预约号：" + result.appointmentNo() + "。");
+        var prepared = holds.prepare(context.userAccountId(), slotId, idempotencyKey, "AGENT");
+        var hold = holdRepository.findByUserIdAndIdempotencyKey(context.userAccountId(), idempotencyKey)
+                .orElseThrow(() -> new IllegalStateException("prepared appointment hold is missing"));
+        var action = actions.issue(hold, "appointment-" + hold.getPublicId());
+        var surface = surfaces.create(hold, action);
+        return ToolExecutionResult.success(name(), java.util.Map.of("prepared", prepared, "surface", surface),
+                "已生成预约确认卡片，请您确认后才会完成挂号。");
     }
 
     private String compact(String value, int maxLength) {

@@ -1,5 +1,6 @@
 import { getApiBaseUrl } from "@/lib/api/client";
 import { getAccessToken } from "@/lib/auth/token";
+import type { A2uiMessage } from "@/lib/a2ui/types";
 
 export type ChatStreamEvent =
   | { event: "message_start"; data: { messageId: string; conversationId: string; traceId: string } }
@@ -7,6 +8,7 @@ export type ChatStreamEvent =
   | { event: "message_end"; data: { messageId: string; status: string; finishReason: string } }
   | { event: "tool_status"; data: Record<string, unknown> }
   | { event: "citation"; data: Record<string, unknown> }
+  | { event: "a2ui"; data: A2uiMessage }
   | { event: "error"; data: { code: string; message: string } };
 
 type SendChatStreamOptions = {
