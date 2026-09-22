@@ -6,6 +6,7 @@ import com.medora.appointment.domain.AppointmentEntity;
 import com.medora.appointment.hold.AppointmentHoldEntity;
 import com.medora.appointment.hold.AppointmentHoldRepository;
 import com.medora.appointment.service.AppointmentCommandService;
+import com.medora.appointment.repository.AppointmentRepository;
 import com.medora.masterdata.domain.ScheduleSlotEntity;
 import com.medora.masterdata.repository.ScheduleSlotRepository;
 import com.medora.appointment.waitlist.WaitlistEntryRepository;
@@ -28,22 +29,32 @@ public class A2uiActionService {
     private final ScheduleSlotRepository slotRepository;
     private final AppointmentCommandService appointmentCommandService;
     private final WaitlistEntryRepository waitlistEntries;
+    private final AppointmentRepository appointments;
 
     @Autowired
     public A2uiActionService(A2uiActionRepository repository, ConfirmationTokenService tokens, Clock clock,
                              AppointmentHoldRepository holdRepository, ScheduleSlotRepository slotRepository,
-                             AppointmentCommandService appointmentCommandService, WaitlistEntryRepository waitlistEntries) {
+                             AppointmentCommandService appointmentCommandService, WaitlistEntryRepository waitlistEntries,
+                             AppointmentRepository appointments) {
         this.repository = repository; this.tokens = tokens; this.clock = clock;
         this.holdRepository = holdRepository; this.slotRepository = slotRepository;
         this.appointmentCommandService = appointmentCommandService;
         this.waitlistEntries = waitlistEntries;
+        this.appointments = appointments;
+    }
+
+    @Deprecated
+    public A2uiActionService(A2uiActionRepository repository, ConfirmationTokenService tokens, Clock clock,
+                             AppointmentHoldRepository holdRepository, ScheduleSlotRepository slotRepository,
+                             AppointmentCommandService appointmentCommandService, WaitlistEntryRepository waitlistEntries) {
+        this(repository, tokens, clock, holdRepository, slotRepository, appointmentCommandService, waitlistEntries, null);
     }
 
     @Deprecated
     public A2uiActionService(A2uiActionRepository repository, ConfirmationTokenService tokens, Clock clock,
                              AppointmentHoldRepository holdRepository, ScheduleSlotRepository slotRepository,
                              AppointmentCommandService appointmentCommandService) {
-        this(repository, tokens, clock, holdRepository, slotRepository, appointmentCommandService, null);
+        this(repository, tokens, clock, holdRepository, slotRepository, appointmentCommandService, null, null);
     }
 
     @Transactional
@@ -105,7 +116,11 @@ public class A2uiActionService {
         }
         if ("CONSUMED".equals(action.getStatus())) {
             if (hold.getConfirmedAppointmentId() == null) throw new IllegalStateException("confirmed appointment is missing");
-            return new ConfirmedA2uiAction(action.getPublicId().toString(), action.getStatus(), hold.getConfirmedAppointmentId().toString());
+            if (appointments == null) return new ConfirmedA2uiAction(action.getPublicId().toString(), action.getStatus(), hold.getConfirmedAppointmentId().toString());
+            String appointmentId = appointments.findById(hold.getConfirmedAppointmentId())
+                    .orElseThrow(() -> new IllegalStateException("confirmed appointment is missing"))
+                    .getPublicId().toString();
+            return new ConfirmedA2uiAction(action.getPublicId().toString(), action.getStatus(), appointmentId);
         }
         if (!"PENDING".equals(action.getStatus())) throw new IllegalStateException("a2ui action is no longer pending");
         if (!"PENDING_CONFIRMATION".equals(hold.getStatus()) || !hold.getExpiresAt().isAfter(OffsetDateTime.now(clock))) {
