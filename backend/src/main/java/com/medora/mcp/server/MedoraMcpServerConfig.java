@@ -1,9 +1,6 @@
 package com.medora.mcp.server;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.medora.mcp.config.McpProperties;
-import com.medora.knowledge.service.RetrievalService;
-import com.medora.masterdata.api.query.ScheduleSlotListQuery;
-import com.medora.masterdata.service.ScheduleSlotQueryService;
+import com.medora.toolgateway.execution.ToolGateway;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
@@ -18,16 +15,16 @@ import java.util.List; import java.util.Map;
 public class MedoraMcpServerConfig {
  @Bean HttpServletStreamableServerTransportProvider mcpTransport(ObjectMapper mapper){return HttpServletStreamableServerTransportProvider.builder().mcpEndpoint("/mcp").jsonMapper(new JacksonMcpJsonMapper(mapper)).disallowDelete(true).build();}
  @Bean McpSyncServer medoraMcpServer(HttpServletStreamableServerTransportProvider transport, ObjectMapper mapper,
-                                     RetrievalService retrieval, ScheduleSlotQueryService schedules){
+                                     ToolGateway gateway){
+  SearchMedicalKnowledgeMcpTool knowledge = new SearchMedicalKnowledgeMcpTool(gateway);
+  QueryScheduleSlotsMcpTool schedules = new QueryScheduleSlotsMcpTool(gateway);
   return McpServer.sync(transport).serverInfo("medora","1.0.0").instructions("Read-only Medora MCP server").strictToolNameValidation(true).validateToolInputs(true)
-   .toolCall(knowledgeTool(),(exchange,request)->result(mapper,()->retrieval.searchForAdmin(text(request,"query"),text(request,"bizScope"),number(request,"topK",5))))
-   .toolCall(scheduleTool(),(exchange,request)->result(mapper,()->schedules.list(new ScheduleSlotListQuery(text(request,"departmentId"),text(request,"doctorId"),text(request,"scheduleDate"),text(request,"periodCode"),"OPEN",1,Math.min(number(request,"pageSize",20),100)))))
+   .toolCall(knowledgeTool(),(exchange,request)->result(mapper,()->knowledge.execute(request.arguments())))
+   .toolCall(scheduleTool(),(exchange,request)->result(mapper,()->schedules.execute(request.arguments())))
    .build();}
  @Bean ServletRegistrationBean<HttpServletStreamableServerTransportProvider> mcpServlet(HttpServletStreamableServerTransportProvider transport){return new ServletRegistrationBean<>(transport,"/mcp");}
  private McpSchema.Tool knowledgeTool(){return new McpSchema.Tool("searchMedicalKnowledge",null,"Search published medical knowledge",schema(Map.of("query",Map.of("type","string","minLength",1)),List.of("query")),Map.of(),null,Map.of());}
  private McpSchema.Tool scheduleTool(){return new McpSchema.Tool("queryScheduleSlots",null,"Query open schedule slots",schema(Map.of("scheduleDate",Map.of("type","string","minLength",1)),List.of("scheduleDate")),Map.of(),null,Map.of());}
  private Map<String,Object> schema(Map<String,Object> props,List<String> required){return Map.of("type","object","properties",props,"required",required,"additionalProperties",false);}
- private String text(McpSchema.CallToolRequest r,String key){Object value=r.arguments().get(key);return value instanceof String s?s:null;}
- private int number(McpSchema.CallToolRequest r,String key,int fallback){Object value=r.arguments().get(key);return value instanceof Number n?n.intValue():fallback;}
- private McpSchema.CallToolResult result(ObjectMapper mapper,java.util.concurrent.Callable<Object> action){try{return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent(mapper.writeValueAsString(action.call()))),false,null,Map.of());}catch(Exception ignored){return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent("tool unavailable")),true,null,Map.of());}}
+ private McpSchema.CallToolResult result(ObjectMapper mapper,java.util.concurrent.Callable<Object> action){try{Object data=action.call();return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent(mapper.writeValueAsString(data))),false,data,Map.of());}catch(Exception ignored){return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent("tool unavailable")),true,null,Map.of());}}
 }
