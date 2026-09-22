@@ -63,6 +63,11 @@ medora:
     tool-gateway: ${FEATURE_TOOL_GATEWAY:false}
     a2ui-appointment: ${FEATURE_A2UI_APPOINTMENT:false}
     mcp: ${FEATURE_MCP:false}
+  mcp:
+    enabled: ${FEATURE_MCP:false}
+    server-token: ${MCP_SERVER_TOKEN:}
+    allowed-origins: ${MCP_ALLOWED_ORIGINS:}
+    remote-servers: []
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:*,http://127.0.0.1:*}
   rag:
