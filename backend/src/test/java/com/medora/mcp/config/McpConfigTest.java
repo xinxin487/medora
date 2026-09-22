@@ -22,4 +22,12 @@ class McpConfigTest {
   assertThat(remote.getTokenEnvName()).isEqualTo("DIRECTORY_TOKEN");
   assertThat(remote.getAllowedTools()).containsExactly("findDepartment");
  }
+
+ @Test void rejectsRemoteHostsOutsideTheExplicitAllowList() {
+  McpProperties properties=new McpProperties();
+  properties.setEnabled(true); properties.setServerToken("token"); properties.setAllowedOrigins(List.of("https://medora.example"));
+  properties.setAllowedRemoteHosts(List.of("directory.example"));
+  McpProperties.RemoteServer remote=new McpProperties.RemoteServer(); remote.setName("directory"); remote.setBaseUrl("https://other.example/mcp"); remote.setTokenEnvName("DIRECTORY_TOKEN"); remote.setAllowedTools(List.of("findDepartment")); properties.setRemoteServers(List.of(remote));
+  assertThatThrownBy(properties::validate).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("allow-list");
+ }
 }

@@ -67,6 +67,7 @@ medora:
     enabled: ${FEATURE_MCP:false}
     server-token: ${MCP_SERVER_TOKEN:}
     allowed-origins: ${MCP_ALLOWED_ORIGINS:}
+    allowed-remote-hosts: ${MCP_ALLOWED_REMOTE_HOSTS:}
     remote-servers: []
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:*,http://127.0.0.1:*}

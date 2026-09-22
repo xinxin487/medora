@@ -61,6 +61,8 @@ public class McpDiscoveryService {
     /** A remote outage is deliberately isolated: local Gateway tools remain available. */
     public void discoverConfiguredTools() {
         if (properties == null || factory == null || connections == null) return;
+        try { properties.validate(); }
+        catch (RuntimeException exception) { return; }
         for (McpProperties.RemoteServer remote : properties.getRemoteServers()) {
             try {
                 McpServerConnection connection = factory.connect(remote);

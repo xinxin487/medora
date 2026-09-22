@@ -27,7 +27,7 @@ public class McpClientFactory {
     }
 
     public McpServerConnection connect(McpProperties.RemoteServer remote) {
-        remote.validate();
+        // McpProperties validates the configuration and its remote host allow-list at startup.
         String token = System.getenv(remote.getTokenEnvName());
         if (token == null || token.isBlank()) throw new McpConnectionException("MCP remote unavailable");
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport.builder(remote.getBaseUrl())

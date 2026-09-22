@@ -38,6 +38,7 @@ class McpDiscoveryServiceTest {
         McpConnectionRegistry connections = new McpConnectionRegistry();
         McpProperties properties = new McpProperties();
         properties.setEnabled(true); properties.setServerToken("server-token"); properties.setAllowedOrigins(List.of("https://medora.example"));
+        properties.setAllowedRemoteHosts(List.of("directory.example", "unavailable.example"));
         McpProperties.RemoteServer available = remote("directory", "DIRECTORY_TOKEN");
         McpProperties.RemoteServer unavailable = remote("unavailable", "UNAVAILABLE_TOKEN");
         properties.setRemoteServers(List.of(available, unavailable));
