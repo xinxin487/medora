@@ -11,6 +11,7 @@ import java.util.List;
 public interface WaitlistEntryRepository extends JpaRepository<WaitlistEntryEntity, Long> {
     List<WaitlistEntryEntity> findBySlotIdAndStatusOrderByPriorityDescJoinedAtAsc(Long slotId, String status);
     List<WaitlistEntryEntity> findByStatusOrderByPriorityDescJoinedAtAsc(String status);
+    java.util.Optional<WaitlistEntryEntity> findByPublicId(java.util.UUID publicId);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select w from WaitlistEntryEntity w where w.id = :id")
     java.util.Optional<WaitlistEntryEntity> findByIdForUpdate(@Param("id") Long id);
