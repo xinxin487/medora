@@ -1,13 +1,78 @@
+name: medora-dev
+
 services:
+  postgres:
+    image: medora-postgres-pgvector:16
+    build:
+      context: ../..
+      dockerfile: deploy/docker/postgres-pgvector.Dockerfile
+      args:
+        PG_MAJOR: "16"
+        PGVECTOR_VERSION: "0.8.6"
+    container_name: medora-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-medora}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - medora-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  redis:
+    image: public.ecr.aws/docker/library/redis:7-alpine
+    container_name: medora-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - medora-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: medora-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - medora-minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   hospital-directory-mcp:
     build:
       context: ../../mcp/hospital-directory
       dockerfile: Dockerfile
     environment:
-      HOSPITAL_DIRECTORY_TOKEN: ${HOSPITAL_DIRECTORY_MCP_TOKEN:?set HOSPITAL_DIRECTORY_MCP_TOKEN}
+      HOSPITAL_DIRECTORY_TOKEN: ${HOSPITAL_DIRECTORY_MCP_TOKEN:-local-demo-hospital-token-change-me}
       HOSPITAL_DIRECTORY_ALLOWED_ORIGIN: ${MCP_CLIENT_ORIGIN:-https://medora.internal}
     expose:
       - "8080"
+    ports:
+      - "${HOSPITAL_DIRECTORY_MCP_PORT:-18080}:8080"
     healthcheck:
       test:
         - CMD-SHELL
@@ -23,3 +88,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+volumes:
+  medora-postgres-data:
+  medora-redis-data:
+  medora-minio-data:
