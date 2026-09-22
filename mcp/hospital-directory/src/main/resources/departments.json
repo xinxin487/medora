@@ -1,0 +1,20 @@
+[
+  {
+    "departmentCode": "RESP",
+    "departmentName": "呼吸内科",
+    "keywords": ["咳", "呼吸"],
+    "reason": "咳嗽或呼吸不适可先由呼吸内科评估"
+  },
+  {
+    "departmentCode": "DERM",
+    "departmentName": "皮肤科",
+    "keywords": ["皮", "疹"],
+    "reason": "皮疹可先由皮肤科评估"
+  },
+  {
+    "departmentCode": "GENERAL",
+    "departmentName": "普通门诊",
+    "keywords": [],
+    "reason": "症状信息不足时建议先到普通门诊分诊"
+  }
+]
