@@ -21,6 +21,13 @@ import static org.mockito.Mockito.*;
 
 class WaitlistPromotionTest {
     @Test
+    void anExpiredOfferTransitionsOutOfActiveMembership() {
+        WaitlistEntryEntity entry = WaitlistEntryEntity.waiting(7L, 19L, 0, Instant.parse("2026-09-21T14:00:00Z").atOffset(ZoneOffset.UTC));
+        entry.offer(55L);
+        entry.expireOffer();
+        assertThat(entry.getStatus()).isEqualTo("EXPIRED");
+    }
+    @Test
     void skipsCancelledAndStaleEntriesThenOffersTheNextFifoCandidate() {
         WaitlistEntryRepository entries = mock(WaitlistEntryRepository.class);
         WaitlistIndex index = mock(WaitlistIndex.class);

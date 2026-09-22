@@ -2,6 +2,7 @@ package com.medora.appointment.hold;
 
 import com.medora.masterdata.domain.ScheduleSlotEntity;
 import com.medora.masterdata.repository.ScheduleSlotRepository;
+import com.medora.appointment.waitlist.WaitlistEntryRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -33,7 +34,7 @@ class AppointmentHoldExpiryJobTest {
         when(holds.findPendingExpiredForUpdate(Instant.parse("2026-09-21T14:00:00Z").atOffset(ZoneOffset.UTC)))
                 .thenReturn(List.of(hold));
         when(slots.findByIdForUpdate(19L)).thenReturn(java.util.Optional.of(slot));
-        AppointmentHoldExpiryJob job = new AppointmentHoldExpiryJob(holds, slots, expiryIndex, events, fixedClock());
+        AppointmentHoldExpiryJob job = new AppointmentHoldExpiryJob(holds, slots, expiryIndex, events, fixedClock(), mock(WaitlistEntryRepository.class));
 
         job.expireOverdue();
         job.expireOverdue();

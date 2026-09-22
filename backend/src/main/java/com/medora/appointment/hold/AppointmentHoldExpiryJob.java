@@ -2,6 +2,7 @@ package com.medora.appointment.hold;
 
 import com.medora.masterdata.domain.ScheduleSlotEntity;
 import com.medora.masterdata.repository.ScheduleSlotRepository;
+import com.medora.appointment.waitlist.WaitlistEntryRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,10 +20,11 @@ public class AppointmentHoldExpiryJob {
     private final HoldExpiryIndex expiryIndex;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final WaitlistEntryRepository waitlistEntries;
 
     public AppointmentHoldExpiryJob(AppointmentHoldRepository holds, ScheduleSlotRepository slots, HoldExpiryIndex expiryIndex,
-                                    ApplicationEventPublisher events, Clock clock) {
-        this.holds = holds; this.slots = slots; this.expiryIndex = expiryIndex; this.events = events; this.clock = clock;
+                                    ApplicationEventPublisher events, Clock clock, WaitlistEntryRepository waitlistEntries) {
+        this.holds = holds; this.slots = slots; this.expiryIndex = expiryIndex; this.events = events; this.clock = clock; this.waitlistEntries = waitlistEntries;
     }
 
     @Scheduled(fixedDelayString = "${medora.appointment.hold-expiry-delay-ms:30000}")
@@ -33,6 +35,7 @@ public class AppointmentHoldExpiryJob {
             ScheduleSlotEntity slot = slots.findByIdForUpdate(hold.getSlotId())
                     .orElseThrow(() -> new IllegalStateException("schedule slot not found for expired hold"));
             hold.expire();
+            waitlistEntries.findByOfferedHoldId(hold.getId()).ifPresent(entry -> entry.expireOffer());
             slot.releaseHeldOne();
             expiryIndex.remove(hold.getPublicId().toString());
             publishAfterCommit(new SlotReleased(slot.getId()));
