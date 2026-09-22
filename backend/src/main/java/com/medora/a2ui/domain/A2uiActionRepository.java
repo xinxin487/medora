@@ -19,7 +19,7 @@ public interface A2uiActionRepository extends JpaRepository<A2uiActionEntity, Lo
     Optional<A2uiActionEntity> findByPublicIdForUpdate(@Param("publicId") UUID publicId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select a from A2uiActionEntity a where a.userId = :userId and a.conversationId = :conversationId and a.status = 'PENDING' order by a.createdAt asc")
-    List<A2uiActionEntity> findPendingByUserIdAndConversationIdForUpdate(@Param("userId") Long userId,
-                                                                           @Param("conversationId") UUID conversationId);
+    @Query("select a from A2uiActionEntity a where a.userId = :userId and a.status = 'PENDING' and (a.conversationId = :conversationId or a.conversationId is null) order by a.createdAt asc")
+    List<A2uiActionEntity> findPendingForSurfaceRestore(@Param("userId") Long userId,
+                                                         @Param("conversationId") UUID conversationId);
 }

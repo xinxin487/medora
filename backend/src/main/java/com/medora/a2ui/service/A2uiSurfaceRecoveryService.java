@@ -34,7 +34,7 @@ public class A2uiSurfaceRecoveryService {
     @Transactional
     public List<A2uiMessage> restore(Long userId, UUID conversationId) {
         List<A2uiMessage> restored = new ArrayList<>();
-        for (A2uiActionEntity existing : actions.findPendingByUserIdAndConversationIdForUpdate(userId, conversationId)) {
+        for (A2uiActionEntity existing : actions.findPendingForSurfaceRestore(userId, conversationId)) {
             var hold = holds.findById(existing.getHoldId()).orElse(null);
             if (hold == null || !"PENDING_CONFIRMATION".equals(hold.getStatus())) {
                 existing.cancel();
