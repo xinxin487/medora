@@ -16,7 +16,7 @@ services:
           -H "Authorization: Bearer $$HOSPITAL_DIRECTORY_TOKEN"
           -H "Origin: $$HOSPITAL_DIRECTORY_ALLOWED_ORIGIN"
           -H "Content-Type: application/json"
-          --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"healthcheck","version":"1"}}}'
+          --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"healthcheck","version":"1"}}}'
           http://localhost:8080/mcp >/dev/null
       interval: 15s
       timeout: 5s
