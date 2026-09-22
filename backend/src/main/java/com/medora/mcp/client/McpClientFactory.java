@@ -21,13 +21,22 @@ public class McpClientFactory {
     private static final int MAX_SCHEMA_BYTES = 16 * 1024;
     private static final int MAX_RESPONSE_BYTES = 128 * 1024;
     private final ObjectMapper objectMapper;
+    private final McpProperties properties;
 
     public McpClientFactory(ObjectMapper objectMapper) {
+        this(objectMapper, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public McpClientFactory(ObjectMapper objectMapper, McpProperties properties) {
         this.objectMapper = objectMapper;
+        this.properties = properties;
     }
 
     public McpServerConnection connect(McpProperties.RemoteServer remote) {
-        // McpProperties validates the configuration and its remote host allow-list at startup.
+        if (properties == null) throw new McpConnectionException("MCP remote unavailable");
+        properties.validate();
+        remote.validate(properties.getAllowedRemoteHosts());
         String token = System.getenv(remote.getTokenEnvName());
         if (token == null || token.isBlank()) throw new McpConnectionException("MCP remote unavailable");
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport.builder(remote.getBaseUrl())
