@@ -6,12 +6,14 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "a2ui_action")
 public class A2uiActionEntity extends BaseEntity {
     @Column(name = "hold_id", nullable = false) private Long holdId;
     @Column(name = "user_id", nullable = false) private Long userId;
+    @Column(name = "conversation_id") private UUID conversationId;
     @Column(name = "surface_id", nullable = false) private String surfaceId;
     @Column(name = "action_type", nullable = false) private String actionType;
     @Column(name = "token_hash", nullable = false) private String tokenHash;
@@ -21,8 +23,13 @@ public class A2uiActionEntity extends BaseEntity {
 
     public static A2uiActionEntity pending(Long holdId, Long userId, String surfaceId, String actionType,
                                            String tokenHash, OffsetDateTime expiresAt) {
+        return pending(holdId, userId, null, surfaceId, actionType, tokenHash, expiresAt);
+    }
+    public static A2uiActionEntity pending(Long holdId, Long userId, UUID conversationId, String surfaceId,
+                                           String actionType, String tokenHash, OffsetDateTime expiresAt) {
         A2uiActionEntity action = new A2uiActionEntity();
         action.holdId = holdId; action.userId = userId; action.surfaceId = surfaceId;
+        action.conversationId = conversationId;
         action.actionType = actionType; action.tokenHash = tokenHash; action.status = "PENDING"; action.expiresAt = expiresAt;
         return action;
     }
@@ -32,6 +39,7 @@ public class A2uiActionEntity extends BaseEntity {
     private void requirePending() { if (!"PENDING".equals(status)) throw new IllegalStateException("a2ui action is no longer pending"); }
     public Long getHoldId() { return holdId; }
     public Long getUserId() { return userId; }
+    public UUID getConversationId() { return conversationId; }
     public String getSurfaceId() { return surfaceId; }
     public String getActionType() { return actionType; }
     public String getTokenHash() { return tokenHash; }

@@ -36,12 +36,24 @@ public class A2uiActionService {
 
     @Transactional
     public IssuedA2uiAction issue(AppointmentHoldEntity hold, String surfaceId) {
+        return issue(hold, surfaceId, null);
+    }
+
+    @Transactional
+    public IssuedA2uiAction issue(AppointmentHoldEntity hold, String surfaceId, UUID conversationId) {
         if (!"PENDING_CONFIRMATION".equals(hold.getStatus())) throw new IllegalStateException("appointment hold is not pending");
         String rawToken = tokens.generate();
         OffsetDateTime expiry = hold.getExpiresAt().isBefore(OffsetDateTime.now(clock)) ? OffsetDateTime.now(clock) : hold.getExpiresAt();
-        A2uiActionEntity saved = repository.save(A2uiActionEntity.pending(hold.getId(), hold.getUserId(), surfaceId,
+        A2uiActionEntity saved = repository.save(A2uiActionEntity.pending(hold.getId(), hold.getUserId(), conversationId, surfaceId,
                 "CONFIRM_APPOINTMENT", tokens.sha256(rawToken), expiry));
         return new IssuedA2uiAction(saved.getPublicId().toString(), surfaceId, rawToken, expiry);
+    }
+
+    @Transactional
+    public IssuedA2uiAction replaceForRecovery(AppointmentHoldEntity hold, A2uiActionEntity existing) {
+        if (!"PENDING".equals(existing.getStatus())) throw new IllegalStateException("a2ui action is no longer pending");
+        existing.cancel();
+        return issue(hold, existing.getSurfaceId(), existing.getConversationId());
     }
 
     /**

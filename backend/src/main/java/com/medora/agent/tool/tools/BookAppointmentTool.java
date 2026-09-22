@@ -55,7 +55,7 @@ public class BookAppointmentTool implements ToolDefinition {
         var prepared = holds.prepare(context.userAccountId(), slotId, idempotencyKey, "AGENT");
         var hold = holdRepository.findByUserIdAndIdempotencyKey(context.userAccountId(), idempotencyKey)
                 .orElseThrow(() -> new IllegalStateException("prepared appointment hold is missing"));
-        var action = actions.issue(hold, "appointment-" + hold.getPublicId());
+        var action = actions.issue(hold, "appointment-" + hold.getPublicId(), java.util.UUID.fromString(context.conversationId()));
         var surface = surfaces.create(hold, action);
         return ToolExecutionResult.success(name(), java.util.Map.of("prepared", prepared, "surface", surface),
                 "已生成预约确认卡片，请您确认后才会完成挂号。");

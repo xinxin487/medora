@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api/client";
 import { useAuth } from "@/lib/hooks/use-auth";
 import { sendChatMessageStream } from "@/lib/sse/chat-stream";
 import { reduceA2uiSurface } from "@/lib/a2ui/reducer";
+import { loadPendingA2uiSurfaces } from "@/lib/a2ui/action-client";
 import type { A2uiSurface } from "@/lib/a2ui/types";
 import { A2uiSurfaceCard } from "@/components/a2ui/a2ui-surface";
 import type { PageResponse } from "@/lib/types";
@@ -67,6 +68,9 @@ export default function AssistantPage() {
   useEffect(() => {
     if (activeConversationId) {
       void loadMessages(activeConversationId);
+      void loadPendingSurfaces(activeConversationId);
+    } else {
+      setA2uiSurfaces({});
     }
   }, [activeConversationId]);
 
@@ -135,6 +139,18 @@ export default function AssistantPage() {
       );
       setMessages(result.list);
       setStatus("会话记录已加载。");
+    }, false);
+  }
+
+  async function loadPendingSurfaces(conversationId: string) {
+    await runAction(async () => {
+      const surfaces = await loadPendingA2uiSurfaces(conversationId);
+      setA2uiSurfaces(
+        surfaces.reduce<Record<string, A2uiSurface>>(
+          (current, surface) => reduceA2uiSurface(current, surface),
+          {},
+        ),
+      );
     }, false);
   }
 
