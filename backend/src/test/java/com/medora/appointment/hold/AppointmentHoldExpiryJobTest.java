@@ -18,6 +18,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 
 class AppointmentHoldExpiryJobTest {
 
@@ -44,6 +45,31 @@ class AppointmentHoldExpiryJobTest {
         assertThat(slot.getReservedQuota()).isZero();
         verify(events, times(1)).publishEvent(org.mockito.ArgumentMatchers.any(SlotReleased.class));
         verify(expiryIndex, times(1)).remove(hold.getPublicId().toString());
+    }
+
+    @Test
+    void expiresAnOfferedWaitlistHoldAndPublishesTheReleasedSlotForTheNextCandidate() {
+        AppointmentHoldRepository holds = mock(AppointmentHoldRepository.class);
+        ScheduleSlotRepository slots = mock(ScheduleSlotRepository.class);
+        HoldExpiryIndex expiryIndex = mock(HoldExpiryIndex.class);
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        WaitlistEntryRepository waitlistEntries = mock(WaitlistEntryRepository.class);
+        AppointmentHoldEntity hold = AppointmentHoldEntity.pending(7L, 19L, "WAIT-30",
+                Instant.parse("2026-09-21T13:59:00Z").atOffset(ZoneOffset.UTC));
+        ReflectionTestUtils.setField(hold, "id", 88L);
+        ReflectionTestUtils.setField(hold, "publicId", UUID.randomUUID());
+        var offered = com.medora.appointment.waitlist.WaitlistEntryEntity.waiting(7L, 19L, 0,
+                Instant.parse("2026-09-21T13:58:00Z").atOffset(ZoneOffset.UTC));
+        offered.offer(88L);
+        when(holds.findPendingExpiredForUpdate(any())).thenReturn(List.of(hold));
+        when(slots.findByIdForUpdate(19L)).thenReturn(java.util.Optional.of(heldSlot()));
+        when(waitlistEntries.findByOfferedHoldId(88L)).thenReturn(java.util.Optional.of(offered));
+        AppointmentHoldExpiryJob job = new AppointmentHoldExpiryJob(holds, slots, expiryIndex, events, fixedClock(), waitlistEntries);
+
+        job.expireOverdue();
+
+        assertThat(offered.getStatus()).isEqualTo("EXPIRED");
+        verify(events).publishEvent(new SlotReleased(19L));
     }
 
     private Clock fixedClock() { return Clock.fixed(Instant.parse("2026-09-21T14:00:00Z"), ZoneOffset.UTC); }
