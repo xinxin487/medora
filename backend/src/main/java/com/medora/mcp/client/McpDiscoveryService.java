@@ -5,6 +5,7 @@ import com.medora.toolgateway.descriptor.ToolRisk;
 import com.medora.toolgateway.descriptor.ToolSourceType;
 import com.medora.toolgateway.registry.GatewayToolRegistry;
 import com.medora.mcp.config.McpProperties;
+import com.medora.mcp.health.McpHealthService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -20,18 +21,25 @@ public class McpDiscoveryService {
     private final McpProperties properties;
     private final McpClientFactory factory;
     private final McpConnectionRegistry connections;
+    private final McpHealthService health;
 
     public McpDiscoveryService(GatewayToolRegistry registry) {
-        this(registry, null, null, null);
+        this(registry, null, null, null, null);
+    }
+
+    public McpDiscoveryService(GatewayToolRegistry registry, McpProperties properties, McpClientFactory factory,
+                               McpConnectionRegistry connections) {
+        this(registry, properties, factory, connections, null);
     }
 
     @Autowired
     public McpDiscoveryService(GatewayToolRegistry registry, McpProperties properties, McpClientFactory factory,
-                               McpConnectionRegistry connections) {
+                               McpConnectionRegistry connections, McpHealthService health) {
         this.registry = registry;
         this.properties = properties;
         this.factory = factory;
         this.connections = connections;
+        this.health = health;
     }
 
     public List<ToolDescriptor> registerAllowedTools(String serverName, List<String> allowedTools,
@@ -59,7 +67,9 @@ public class McpDiscoveryService {
                 List<RemoteMcpTool> tools = connection.listTools();
                 registerAllowedTools(remote.getName(), remote.getAllowedTools(), tools);
                 connections.register(connection);
-            } catch (RuntimeException ignored) {
+                if (health != null) health.markHealthy(remote.getName());
+            } catch (RuntimeException exception) {
+                if (health != null) health.markUnavailable(remote.getName(), exception);
                 // Health state is recorded by the MCP health service; no remote detail reaches startup logs.
             }
         }
