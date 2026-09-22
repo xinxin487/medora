@@ -18,6 +18,15 @@ class GatewayToolRegistryTest {
         assertThatThrownBy(() -> new GatewayToolRegistry(List.of(descriptor, descriptor))).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> registry.all().clear()).isInstanceOf(UnsupportedOperationException.class);
     }
+
+    @Test void rejectsARequestToRegisterANonMcpDescriptorAsRemote() {
+        GatewayToolRegistry registry = new GatewayToolRegistry(List.of());
+        ToolDescriptor localDescriptor = descriptor("mcp.directory.findDepartment", "1");
+
+        assertThatThrownBy(() -> registry.registerRemote(localDescriptor))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("MCP source");
+    }
     private ToolDescriptor descriptor(String name, String version) {
         return new ToolDescriptor(name, version, "test", ToolSourceType.LOCAL, Map.of(), Map.of(), ToolRisk.LOW,
                 List.of("USER"), List.of("booking"), Duration.ofSeconds(1), true, false, "INTERNAL");
