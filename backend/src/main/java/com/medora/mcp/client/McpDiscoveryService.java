@@ -4,6 +4,10 @@ import com.medora.toolgateway.descriptor.ToolDescriptor;
 import com.medora.toolgateway.descriptor.ToolRisk;
 import com.medora.toolgateway.descriptor.ToolSourceType;
 import com.medora.toolgateway.registry.GatewayToolRegistry;
+import com.medora.mcp.config.McpProperties;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -13,9 +17,21 @@ import java.util.Set;
 @Service
 public class McpDiscoveryService {
     private final GatewayToolRegistry registry;
+    private final McpProperties properties;
+    private final McpClientFactory factory;
+    private final McpConnectionRegistry connections;
 
     public McpDiscoveryService(GatewayToolRegistry registry) {
+        this(registry, null, null, null);
+    }
+
+    @Autowired
+    public McpDiscoveryService(GatewayToolRegistry registry, McpProperties properties, McpClientFactory factory,
+                               McpConnectionRegistry connections) {
         this.registry = registry;
+        this.properties = properties;
+        this.factory = factory;
+        this.connections = connections;
     }
 
     public List<ToolDescriptor> registerAllowedTools(String serverName, List<String> allowedTools,
@@ -27,6 +43,26 @@ public class McpDiscoveryService {
                 .map(tool -> descriptor(serverName, tool))
                 .peek(registry::registerRemote)
                 .toList();
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void discoverOnStartup() {
+        if (properties != null && properties.isEnabled()) discoverConfiguredTools();
+    }
+
+    /** A remote outage is deliberately isolated: local Gateway tools remain available. */
+    public void discoverConfiguredTools() {
+        if (properties == null || factory == null || connections == null) return;
+        for (McpProperties.RemoteServer remote : properties.getRemoteServers()) {
+            try {
+                McpServerConnection connection = factory.connect(remote);
+                List<RemoteMcpTool> tools = connection.listTools();
+                registerAllowedTools(remote.getName(), remote.getAllowedTools(), tools);
+                connections.register(connection);
+            } catch (RuntimeException ignored) {
+                // Health state is recorded by the MCP health service; no remote detail reaches startup logs.
+            }
+        }
     }
 
     private ToolDescriptor descriptor(String serverName, RemoteMcpTool tool) {
