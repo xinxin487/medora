@@ -3,6 +3,7 @@ import com.medora.toolgateway.policy.*;
 import com.medora.toolgateway.registry.GatewayToolRegistry;
 import com.medora.toolgateway.schema.ToolSchemaValidator;
 import com.medora.toolgateway.adapter.ToolAdapter;
+import com.medora.toolgateway.adapter.McpToolAdapter;
 import com.medora.toolgateway.audit.ToolAuditRecorder;
 import java.util.Map;
 import java.util.function.Function;
@@ -49,6 +50,9 @@ import org.springframework.beans.factory.annotation.Autowired;
                     future.cancel(true);
                     return finish(descriptor, request, GatewayToolResult.failure(GatewayToolResult.Status.TIMEOUT, GatewayErrorCode.DEPENDENCY_TIMEOUT, "tool execution timed out", descriptor.idempotent()), started);
                 } catch (java.util.concurrent.ExecutionException ex) {
+                    if (ex.getCause() instanceof McpToolAdapter.RemoteCallException) {
+                        return finish(descriptor, request, GatewayToolResult.failure(GatewayToolResult.Status.UNAVAILABLE, GatewayErrorCode.UNAVAILABLE, "tool unavailable", true), started);
+                    }
                     if (attempt == 0 && descriptor.idempotent()) continue;
                     return finish(descriptor, request, GatewayToolResult.failure(GatewayToolResult.Status.FAILED, GatewayErrorCode.FAILED, "tool execution failed", descriptor.idempotent()), started);
                 }

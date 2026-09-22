@@ -64,6 +64,7 @@ public class McpDiscoveryService {
         try { properties.validate(); }
         catch (RuntimeException exception) { return; }
         for (McpProperties.RemoteServer remote : properties.getRemoteServers()) {
+            if (health != null) health.markRegistered(remote.getName());
             try {
                 McpServerConnection connection = factory.connect(remote);
                 List<RemoteMcpTool> tools = connection.listTools();
