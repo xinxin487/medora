@@ -3,6 +3,7 @@ package com.medora.eval.rag;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.medora.eval.report.EvidenceReportSupport;
 
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -19,20 +20,20 @@ import java.util.Map;
  */
 public final class RagEvaluationRunner {
     private static final String FIXTURE = "/eval/rag/rag-layered-v1.yaml";
+    private static final String COMMAND = "./scripts/generate-a-stage-reports.sh";
 
     private RagEvaluationRunner() { }
 
     public static void main(String[] args) throws Exception {
-        writeReport(args.length == 0 ? Path.of("target/eval/m2-rag") : Path.of(args[0]));
+        writeReport(args.length == 0 ? Path.of("target/eval/a-stage") : Path.of(args[0]));
     }
 
     public static void writeReport(Path output) throws Exception {
-        Path stem = output.getFileName().toString().equals("m2-rag") ? output : output.resolve("m2-rag");
-        Files.createDirectories(stem.getParent());
         Map<String, Object> metrics = calculateFixtureBaseline();
-        ObjectMapper json = new ObjectMapper();
-        Files.writeString(Path.of(stem + ".json"), json.writerWithDefaultPrettyPrinter().writeValueAsString(metrics));
-        Files.writeString(Path.of(stem + ".md"), markdown(metrics));
+        Map<String, Object> report = EvidenceReportSupport.report(COMMAND, metrics,
+                EvidenceReportSupport.deterministicEnvironment("rag-fixture-replay"));
+        EvidenceReportSupport.writeJson(output.resolve("rag-evaluation.json"), report);
+        Files.writeString(output.resolve("rag-evaluation.md"), markdown(report));
     }
 
     private static Map<String, Object> calculateFixtureBaseline() throws Exception {
@@ -48,9 +49,9 @@ public final class RagEvaluationRunner {
         result.put("ndcgAt5", mrr); // one relevant expected ID per fixed case
         result.put("refusalAccuracy", 1.0);
         result.put("citationHitRate", 1.0);
-        result.put("latencyMs", 0.0);
-        result.put("promptTokenEstimate", 0);
-        result.put("mode", "fixture-baseline");
+        result.put("latencyMillis", 0.0);
+        result.put("promptUnitsEstimate", 0);
+        result.put("evaluationMode", "deterministic-fixture-baseline");
         return result;
     }
 
@@ -71,15 +72,19 @@ public final class RagEvaluationRunner {
                 .average().orElse(0.0);
     }
 
-    private static String markdown(Map<String, Object> metrics) {
-        return "# M2 Layered RAG fixture baseline\n\n"
+    private static String markdown(Map<String, Object> report) {
+        Map<?, ?> metrics = (Map<?, ?>) report.get("metrics");
+        return "# Layered RAG evaluation\n\n"
+                + "> Checked-in deterministic ranking fixture; values are regression evidence, not production traffic measurements.\n\n"
+                + EvidenceReportSupport.metadataMarkdown(report)
                 + "| Metric | Value |\n|---|---:|\n"
                 + "| Recall@5 | " + metrics.get("recallAt5") + " |\n"
                 + "| MRR@5 | " + metrics.get("mrrAt5") + " |\n"
                 + "| nDCG@5 | " + metrics.get("ndcgAt5") + " |\n"
                 + "| Refusal accuracy | " + metrics.get("refusalAccuracy") + " |\n"
                 + "| Citation hit rate | " + metrics.get("citationHitRate") + " |\n"
-                + "| Latency (ms) | " + metrics.get("latencyMs") + " |\n"
-                + "| Prompt-token estimate | " + metrics.get("promptTokenEstimate") + " |\n";
+                + "| Latency (ms) | " + metrics.get("latencyMillis") + " |\n"
+                + "| Prompt-unit estimate | " + metrics.get("promptUnitsEstimate") + " |\n"
+                + "| Evaluation mode | " + metrics.get("evaluationMode") + " |\n";
     }
 }

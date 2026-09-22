@@ -1,3 +1,10 @@
 *
 !.gitkeep
 !.gitignore
+!README.md
+!context-efficiency.json
+!context-efficiency.md
+!rag-evaluation.json
+!rag-evaluation.md
+!appointment-load.json
+!appointment-load.md
