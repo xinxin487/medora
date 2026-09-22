@@ -109,12 +109,12 @@ VALUES (
   '呼吸道症状分层就医演示指南',
   'DEMO',
   'fixture://m6/respiratory-guide',
-  'MEDICAL_KNOWLEDGE',
+  'GUIDE',
   ARRAY['RESPIRATORY'],
   ARRAY[]::text[],
   1,
   'PUBLISHED',
-  'SUCCEEDED',
+  'INDEXED',
   encode(digest('medora-m6-respiratory-guide-v1', 'sha256'), 'hex'),
   '{"fixtureVersion":"m6-v1","hospitalCode":"DEMO_HOSPITAL","documentType":"GUIDE","tags":["咳嗽","呼吸困难"]}'::jsonb,
   NOW() - INTERVAL '1 day',
@@ -123,6 +123,7 @@ VALUES (
 )
 ON CONFLICT (public_id) DO UPDATE
 SET title = EXCLUDED.title,
+    biz_scope = EXCLUDED.biz_scope,
     publish_status = EXCLUDED.publish_status,
     ingest_status = EXCLUDED.ingest_status,
     metadata_json = EXCLUDED.metadata_json,

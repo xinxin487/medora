@@ -4,6 +4,7 @@ import com.medora.appointment.api.request.CancelAppointmentRequest;
 import com.medora.appointment.api.request.CreateAppointmentRequest;
 import com.medora.appointment.domain.AppointmentEntity;
 import com.medora.appointment.domain.AppointmentOperationLogEntity;
+import com.medora.appointment.hold.SlotReleased;
 import com.medora.appointment.repository.AppointmentOperationLogRepository;
 import com.medora.appointment.repository.AppointmentRepository;
 import com.medora.auth.domain.UserAccountEntity;
@@ -18,6 +19,7 @@ import com.medora.masterdata.domain.ScheduleSlotEntity;
 import com.medora.masterdata.repository.ScheduleSlotRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -32,6 +34,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,6 +48,7 @@ class AppointmentCommandServiceTest {
     private AppointmentOperationLogRepository operationLogRepository;
     private AuditLogService auditLogService;
     private MedoraMetricsService medoraMetricsService;
+    private ApplicationEventPublisher eventPublisher;
     private AppointmentCommandService service;
 
     @BeforeEach
@@ -56,6 +60,7 @@ class AppointmentCommandServiceTest {
         operationLogRepository = mock(AppointmentOperationLogRepository.class);
         auditLogService = mock(AuditLogService.class);
         medoraMetricsService = mock(MedoraMetricsService.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         service = new AppointmentCommandService(
                 currentAuthenticatedUserProvider,
                 userAccountRepository,
@@ -64,6 +69,7 @@ class AppointmentCommandServiceTest {
                 operationLogRepository,
                 auditLogService,
                 medoraMetricsService,
+                eventPublisher,
                 Clock.fixed(Instant.parse("2026-06-30T00:00:00Z"), ZoneOffset.ofHours(8))
         );
     }
@@ -144,6 +150,8 @@ class AppointmentCommandServiceTest {
         verify(operationLogRepository).save(any(AppointmentOperationLogEntity.class));
         verify(auditLogService).record(any(), any(), any(), any(), any(), any());
         verify(medoraMetricsService).recordAppointmentCommand("CANCEL", "SUCCESS");
+        verify(eventPublisher).publishEvent((Object) argThat(event -> event instanceof SlotReleased released
+                && released.slotId().equals(40L)));
     }
 
     private UserAccountEntity buildUser(UUID userId) {

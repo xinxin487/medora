@@ -13,8 +13,8 @@ query_counts() {
         (SELECT count(*) FROM department WHERE code IN ('RESPIRATORY', 'GENERAL_INTERNAL')),
         (SELECT count(*) FROM doctor WHERE code IN ('DEMO_RESP_01', 'DEMO_GEN_01')),
         (SELECT count(*) FROM schedule_slot WHERE source_type = 'DEMO_M6'),
-        (SELECT count(*) FROM knowledge_document WHERE metadata_json->>'fixtureVersion' = 'm6-v1'),
-        (SELECT count(*) FROM knowledge_chunk c JOIN knowledge_document d ON d.id = c.document_id WHERE d.metadata_json->>'fixtureVersion' = 'm6-v1'),
+        (SELECT count(*) FROM knowledge_document WHERE metadata_json->>'fixtureVersion' = 'm6-v1' AND biz_scope = 'GUIDE' AND publish_status = 'PUBLISHED' AND ingest_status = 'INDEXED'),
+        (SELECT count(*) FROM knowledge_chunk c JOIN knowledge_document d ON d.id = c.document_id WHERE d.metadata_json->>'fixtureVersion' = 'm6-v1' AND (c.chunk_type = 'PARENT' OR c.parent_chunk_id IS NOT NULL)),
         (SELECT count(*) FROM appointment a JOIN user_account u ON u.id = a.user_id WHERE lower(u.email) = 'demo.patient@medora.local' AND a.status = 'CONFIRMED')
       );"
 }

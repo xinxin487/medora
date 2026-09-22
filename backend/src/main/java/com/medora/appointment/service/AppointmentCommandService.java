@@ -7,6 +7,7 @@ import com.medora.appointment.api.response.AppointmentResponse;
 import com.medora.appointment.domain.AppointmentEntity;
 import com.medora.appointment.domain.AppointmentOperationLogEntity;
 import com.medora.appointment.hold.AppointmentHoldEntity;
+import com.medora.appointment.hold.SlotReleased;
 import com.medora.appointment.repository.AppointmentOperationLogRepository;
 import com.medora.appointment.repository.AppointmentRepository;
 import com.medora.auth.domain.UserAccountEntity;
@@ -20,9 +21,12 @@ import com.medora.common.web.RequestMetadata;
 import com.medora.masterdata.domain.ScheduleSlotEntity;
 import com.medora.masterdata.repository.ScheduleSlotRepository;
 import org.springframework.http.HttpStatus;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.time.Clock;
@@ -43,6 +47,7 @@ public class AppointmentCommandService {
     private final AppointmentOperationLogRepository operationLogRepository;
     private final AuditLogService auditLogService;
     private final MedoraMetricsService medoraMetricsService;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     public AppointmentCommandService(CurrentAuthenticatedUserProvider currentAuthenticatedUserProvider,
@@ -52,6 +57,7 @@ public class AppointmentCommandService {
                                      AppointmentOperationLogRepository operationLogRepository,
                                      AuditLogService auditLogService,
                                      MedoraMetricsService medoraMetricsService,
+                                     ApplicationEventPublisher eventPublisher,
                                      Clock clock) {
         this.currentAuthenticatedUserProvider = currentAuthenticatedUserProvider;
         this.userAccountRepository = userAccountRepository;
@@ -60,6 +66,7 @@ public class AppointmentCommandService {
         this.operationLogRepository = operationLogRepository;
         this.auditLogService = auditLogService;
         this.medoraMetricsService = medoraMetricsService;
+        this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
 
@@ -228,7 +235,21 @@ public class AppointmentCommandService {
                 )
         );
         medoraMetricsService.recordAppointmentCommand("CANCEL", "SUCCESS");
+        publishAfterCommit(new SlotReleased(slot.getId()));
         return AppointmentResponseMapper.toCancelResponse(appointment);
+    }
+
+    private void publishAfterCommit(SlotReleased event) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            eventPublisher.publishEvent(event);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                eventPublisher.publishEvent(event);
+            }
+        });
     }
 
     private UserAccountEntity getCurrentUserAccount() {
