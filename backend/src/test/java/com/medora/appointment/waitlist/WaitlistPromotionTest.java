@@ -4,6 +4,9 @@ import com.medora.appointment.hold.SlotReleased;
 import com.medora.appointment.hold.AppointmentHoldEntity;
 import com.medora.appointment.hold.AppointmentHoldRepository;
 import com.medora.appointment.hold.AppointmentHoldService;
+import com.medora.a2ui.service.A2uiActionService;
+import com.medora.a2ui.service.AppointmentSurfaceFactory;
+import com.medora.a2ui.service.IssuedA2uiAction;
 import com.medora.masterdata.domain.ScheduleSlotEntity;
 import com.medora.masterdata.repository.ScheduleSlotRepository;
 import org.junit.jupiter.api.Test;
@@ -39,6 +42,8 @@ class WaitlistPromotionTest {
         when(entries.findByIdForUpdate(30L)).thenReturn(Optional.of(candidate));
         AppointmentHoldService holds = mock(AppointmentHoldService.class);
         AppointmentHoldRepository holdRepository = mock(AppointmentHoldRepository.class);
+        A2uiActionService actions = mock(A2uiActionService.class);
+        AppointmentSurfaceFactory surfaces = mock(AppointmentSurfaceFactory.class);
         ScheduleSlotRepository slots = mock(ScheduleSlotRepository.class);
         ScheduleSlotEntity slot = new ScheduleSlotEntity();
         UUID slotPublicId = UUID.randomUUID();
@@ -47,13 +52,17 @@ class WaitlistPromotionTest {
         ReflectionTestUtils.setField(hold, "id", 55L);
         when(slots.findById(19L)).thenReturn(Optional.of(slot));
         when(holdRepository.findByUserIdAndIdempotencyKey(3L, "WAIT-30")).thenReturn(Optional.of(hold));
-        WaitlistPromotionHandler handler = new WaitlistPromotionHandler(entries, index, slots, holds, holdRepository, fixedClock());
+        when(actions.issue(hold, "waitlist-30")).thenReturn(new IssuedA2uiAction(UUID.randomUUID().toString(), "waitlist-30", "token",
+                Instant.parse("2026-09-21T14:02:00Z").atOffset(ZoneOffset.UTC)));
+        WaitlistPromotionHandler handler = new WaitlistPromotionHandler(entries, index, slots, holds, holdRepository, actions, surfaces, fixedClock());
 
         handler.onSlotReleased(new SlotReleased(19L));
 
         assertThat(candidate.getStatus()).isEqualTo("OFFERED");
         assertThat(candidate.getOfferedHoldId()).isEqualTo(55L);
         verify(holds).prepare(3L, slotPublicId.toString(), "WAIT-30", "WAITLIST");
+        verify(actions).issue(hold, "waitlist-30");
+        verify(surfaces).create(eq(hold), any(IssuedA2uiAction.class));
         verify(index).remove(19L, "stale");
     }
     @Test

@@ -4,6 +4,8 @@ import com.medora.appointment.hold.SlotReleased;
 import com.medora.appointment.hold.AppointmentHoldRepository;
 import com.medora.appointment.hold.AppointmentHoldService;
 import com.medora.masterdata.repository.ScheduleSlotRepository;
+import com.medora.a2ui.service.A2uiActionService;
+import com.medora.a2ui.service.AppointmentSurfaceFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,9 +15,12 @@ import java.time.Clock;
 public class WaitlistPromotionHandler {
     private final WaitlistEntryRepository entries; private final WaitlistIndex index; private final ScheduleSlotRepository slots;
     private final AppointmentHoldService holds; private final AppointmentHoldRepository holdRepository; private final Clock clock;
+    private final A2uiActionService actions; private final AppointmentSurfaceFactory surfaces;
     public WaitlistPromotionHandler(WaitlistEntryRepository entries, WaitlistIndex index, ScheduleSlotRepository slots,
-                                    AppointmentHoldService holds, AppointmentHoldRepository holdRepository, Clock clock) {
-        this.entries=entries; this.index=index; this.slots=slots; this.holds=holds; this.holdRepository=holdRepository; this.clock=clock;
+                                    AppointmentHoldService holds, AppointmentHoldRepository holdRepository,
+                                    A2uiActionService actions, AppointmentSurfaceFactory surfaces, Clock clock) {
+        this.entries=entries; this.index=index; this.slots=slots; this.holds=holds; this.holdRepository=holdRepository;
+        this.actions=actions; this.surfaces=surfaces; this.clock=clock;
     }
     @EventListener @Transactional
     public void onSlotReleased(SlotReleased event) {
@@ -27,6 +32,8 @@ public class WaitlistPromotionHandler {
             holds.prepare(entry.get().getUserId(), slot.getPublicId().toString(), idempotencyKey, "WAITLIST");
             var hold = holdRepository.findByUserIdAndIdempotencyKey(entry.get().getUserId(), idempotencyKey)
                     .orElseThrow(() -> new IllegalStateException("waitlist hold is missing"));
+            var action = actions.issue(hold, "waitlist-" + id);
+            surfaces.create(hold, action);
             entry.get().offer(hold.getId()); return;
         }
     }
