@@ -20,6 +20,7 @@ logs/
 backend/target/
 backend/.mvn/
 adk-poc/target/
+**/target/
 
 # Gradle
 backend/.gradle/
