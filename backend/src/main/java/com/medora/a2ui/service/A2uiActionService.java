@@ -8,7 +8,9 @@ import com.medora.appointment.hold.AppointmentHoldRepository;
 import com.medora.appointment.service.AppointmentCommandService;
 import com.medora.masterdata.domain.ScheduleSlotEntity;
 import com.medora.masterdata.repository.ScheduleSlotRepository;
+import com.medora.appointment.waitlist.WaitlistEntryRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
@@ -25,13 +27,23 @@ public class A2uiActionService {
     private final AppointmentHoldRepository holdRepository;
     private final ScheduleSlotRepository slotRepository;
     private final AppointmentCommandService appointmentCommandService;
+    private final WaitlistEntryRepository waitlistEntries;
 
+    @Autowired
     public A2uiActionService(A2uiActionRepository repository, ConfirmationTokenService tokens, Clock clock,
                              AppointmentHoldRepository holdRepository, ScheduleSlotRepository slotRepository,
-                             AppointmentCommandService appointmentCommandService) {
+                             AppointmentCommandService appointmentCommandService, WaitlistEntryRepository waitlistEntries) {
         this.repository = repository; this.tokens = tokens; this.clock = clock;
         this.holdRepository = holdRepository; this.slotRepository = slotRepository;
         this.appointmentCommandService = appointmentCommandService;
+        this.waitlistEntries = waitlistEntries;
+    }
+
+    @Deprecated
+    public A2uiActionService(A2uiActionRepository repository, ConfirmationTokenService tokens, Clock clock,
+                             AppointmentHoldRepository holdRepository, ScheduleSlotRepository slotRepository,
+                             AppointmentCommandService appointmentCommandService) {
+        this(repository, tokens, clock, holdRepository, slotRepository, appointmentCommandService, null);
     }
 
     @Transactional
@@ -104,6 +116,7 @@ public class A2uiActionService {
         AppointmentEntity appointment = appointmentCommandService.confirmHeld(userId, hold, slot);
         hold.confirm(appointment.getId());
         action.consume(OffsetDateTime.now(clock));
+        if (waitlistEntries != null) waitlistEntries.findByOfferedHoldId(hold.getId()).ifPresent(entry -> entry.confirm());
         return new ConfirmedA2uiAction(action.getPublicId().toString(), action.getStatus(), appointment.getPublicId().toString());
     }
 
