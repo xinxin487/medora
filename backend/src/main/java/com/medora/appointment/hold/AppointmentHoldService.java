@@ -5,6 +5,7 @@ import com.medora.masterdata.domain.ScheduleSlotEntity;
 import com.medora.masterdata.repository.ScheduleSlotRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
@@ -19,9 +20,20 @@ public class AppointmentHoldService {
     private final ScheduleSlotRepository slots;
     private final SlotLock slotLock;
     private final Clock clock;
+    private final HoldExpiryIndex expiryIndex;
 
     public AppointmentHoldService(AppointmentHoldRepository holds, ScheduleSlotRepository slots, SlotLock slotLock, Clock clock) {
-        this.holds = holds; this.slots = slots; this.slotLock = slotLock; this.clock = clock;
+        this(holds, slots, slotLock, clock, new HoldExpiryIndex() {
+            @Override public void schedule(String holdId, OffsetDateTime expiresAt) { }
+            @Override public void remove(String holdId) { }
+            @Override public java.util.Set<String> dueBefore(OffsetDateTime now, int limit) { return java.util.Set.of(); }
+        });
+    }
+
+    @Autowired
+    public AppointmentHoldService(AppointmentHoldRepository holds, ScheduleSlotRepository slots, SlotLock slotLock, Clock clock,
+                                  HoldExpiryIndex expiryIndex) {
+        this.holds = holds; this.slots = slots; this.slotLock = slotLock; this.clock = clock; this.expiryIndex = expiryIndex;
     }
 
     @Transactional
@@ -39,7 +51,9 @@ public class AppointmentHoldService {
             }
             AppointmentHoldEntity hold = AppointmentHoldEntity.pending(userId, slot.getId(), idempotencyKey,
                     OffsetDateTime.now(clock).plus(HOLD_DURATION));
-            return toPrepared(holds.save(hold), false);
+            AppointmentHoldEntity saved = holds.save(hold);
+            try { expiryIndex.schedule(saved.getPublicId().toString(), saved.getExpiresAt()); } catch (RuntimeException ignored) { }
+            return toPrepared(saved, false);
         } finally {
             if (lease != null) lease.close();
         }

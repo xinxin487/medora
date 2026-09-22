@@ -6,6 +6,7 @@ import com.medora.appointment.api.response.AppointmentCancelResponse;
 import com.medora.appointment.api.response.AppointmentResponse;
 import com.medora.appointment.domain.AppointmentEntity;
 import com.medora.appointment.domain.AppointmentOperationLogEntity;
+import com.medora.appointment.hold.AppointmentHoldEntity;
 import com.medora.appointment.repository.AppointmentOperationLogRepository;
 import com.medora.appointment.repository.AppointmentRepository;
 import com.medora.auth.domain.UserAccountEntity;
@@ -21,6 +22,7 @@ import com.medora.masterdata.repository.ScheduleSlotRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.util.StringUtils;
 
 import java.time.Clock;
@@ -135,6 +137,34 @@ public class AppointmentCommandService {
         );
         medoraMetricsService.recordAppointmentCommand("CREATE", "SUCCESS");
         return AppointmentResponseMapper.toResponse(saved);
+    }
+
+    /**
+     * Finalizes a server-side hold after the A2UI action has authenticated the user.
+     * The caller owns the action, hold, and slot row locks; no agent tool may call this.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public AppointmentEntity confirmHeld(Long userAccountId, AppointmentHoldEntity hold, ScheduleSlotEntity slot) {
+        UserAccountEntity userAccount = getUserAccount(userAccountId);
+        var existing = appointmentRepository.findByUserAccountAndIdempotencyKey(userAccount, hold.getIdempotencyKey());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        if (appointmentRepository.existsByUserAccountAndSlotAndStatus(userAccount, slot, "CONFIRMED")) {
+            throw new BusinessException("APPOINTMENT_CREATE_DUPLICATED", HttpStatus.CONFLICT,
+                    "appointment for this slot already exists");
+        }
+        slot.confirmHeldOne();
+        AppointmentEntity saved = appointmentRepository.save(AppointmentEntity.confirmed(
+                userAccount, slot, generateAppointmentNo(), hold.getIdempotencyKey(), null, "AGENT"));
+        operationLogRepository.save(AppointmentOperationLogEntity.of(
+                saved, "BOOK", userAccount.getId(), RequestMetadata.currentRequestId(), null, saved.getStatus(),
+                "{\"source\":\"AGENT\",\"confirmation\":\"A2UI\"}"));
+        auditLogService.record(userAccount, "AGENT", "APPOINTMENT_CREATE", "APPOINTMENT", saved.getPublicId().toString(),
+                Map.of("appointmentNo", saved.getAppointmentNo(), "slotId", slot.getPublicId().toString(),
+                        "source", "AGENT", "status", saved.getStatus()));
+        medoraMetricsService.recordAppointmentCommand("CREATE", "SUCCESS");
+        return saved;
     }
 
     @Transactional

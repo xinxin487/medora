@@ -3,6 +3,9 @@ package com.medora.a2ui.service;
 import com.medora.a2ui.domain.A2uiActionEntity;
 import com.medora.a2ui.domain.A2uiActionRepository;
 import com.medora.appointment.hold.AppointmentHoldEntity;
+import com.medora.appointment.hold.AppointmentHoldRepository;
+import com.medora.appointment.service.AppointmentCommandService;
+import com.medora.masterdata.repository.ScheduleSlotRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -10,6 +13,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -29,7 +33,7 @@ class A2uiActionServiceTest {
         });
         AppointmentHoldEntity hold = AppointmentHoldEntity.pending(7L, 19L, "idem-1", Instant.parse("2026-09-21T14:02:00Z").atOffset(ZoneOffset.UTC));
         ReflectionTestUtils.setField(hold, "id", 88L);
-        A2uiActionService service = new A2uiActionService(repository, new ConfirmationTokenService(),
+        A2uiActionService service = service(repository, new ConfirmationTokenService(),
                 Clock.fixed(Instant.parse("2026-09-21T14:00:00Z"), ZoneOffset.UTC));
 
         IssuedA2uiAction issued = service.issue(hold, "surface-1");
@@ -37,5 +41,67 @@ class A2uiActionServiceTest {
         assertThat(issued.actionId()).isEqualTo("00000000-0000-0000-0000-000000000021");
         assertThat(issued.confirmationToken()).matches("[A-Za-z0-9_-]{43}");
         verify(repository).save(any(A2uiActionEntity.class));
+    }
+
+    @Test
+    void rejectsWrongUserSurfaceAndTokenBeforeAnActionCanBeConsumed() {
+        A2uiActionRepository repository = mock(A2uiActionRepository.class);
+        ConfirmationTokenService tokens = new ConfirmationTokenService();
+        String token = tokens.generate();
+        A2uiActionEntity action = A2uiActionEntity.pending(88L, 7L, "surface-1", "CONFIRM_APPOINTMENT", tokens.sha256(token),
+                Instant.parse("2026-09-21T14:02:00Z").atOffset(ZoneOffset.UTC));
+        UUID actionId = UUID.randomUUID();
+        ReflectionTestUtils.setField(action, "publicId", actionId);
+        when(repository.findByPublicId(actionId)).thenReturn(Optional.of(action));
+        A2uiActionService service = service(repository, tokens,
+                Clock.fixed(Instant.parse("2026-09-21T14:00:00Z"), ZoneOffset.UTC));
+
+        assertThat(org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.validate(8L, actionId.toString(), "surface-1", token)).getMessage()).contains("owner");
+        assertThat(org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.validate(7L, actionId.toString(), "surface-other", token)).getMessage()).contains("surface");
+        assertThat(org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.validate(7L, actionId.toString(), "surface-1", "forged")).getMessage()).contains("token");
+        assertThat(action.getStatus()).isEqualTo("PENDING");
+    }
+
+    @Test
+    void confirmsOnlyTheHeldQuotaAndConsumesTheAction() {
+        A2uiActionRepository actions = mock(A2uiActionRepository.class);
+        AppointmentHoldRepository holds = mock(AppointmentHoldRepository.class);
+        ScheduleSlotRepository slots = mock(ScheduleSlotRepository.class);
+        AppointmentCommandService appointments = mock(AppointmentCommandService.class);
+        ConfirmationTokenService tokens = new ConfirmationTokenService();
+        String token = tokens.generate();
+        UUID actionId = UUID.randomUUID();
+        A2uiActionEntity action = A2uiActionEntity.pending(88L, 7L, "surface-1", "CONFIRM_APPOINTMENT", tokens.sha256(token),
+                Instant.parse("2026-09-21T14:02:00Z").atOffset(ZoneOffset.UTC));
+        ReflectionTestUtils.setField(action, "publicId", actionId);
+        AppointmentHoldEntity hold = AppointmentHoldEntity.pending(7L, 19L, "idem-1",
+                Instant.parse("2026-09-21T14:02:00Z").atOffset(ZoneOffset.UTC));
+        com.medora.masterdata.domain.ScheduleSlotEntity slot = mock(com.medora.masterdata.domain.ScheduleSlotEntity.class);
+        com.medora.appointment.domain.AppointmentEntity appointment = mock(com.medora.appointment.domain.AppointmentEntity.class);
+        UUID appointmentId = UUID.randomUUID();
+        when(actions.findByPublicIdForUpdate(actionId)).thenReturn(Optional.of(action));
+        when(holds.findByIdForUpdate(88L)).thenReturn(Optional.of(hold));
+        when(slots.findByIdForUpdate(19L)).thenReturn(Optional.of(slot));
+        when(appointments.confirmHeld(7L, hold, slot)).thenReturn(appointment);
+        when(appointment.getId()).thenReturn(101L);
+        when(appointment.getPublicId()).thenReturn(appointmentId);
+        A2uiActionService service = new A2uiActionService(actions, tokens,
+                Clock.fixed(Instant.parse("2026-09-21T14:00:00Z"), ZoneOffset.UTC), holds, slots, appointments);
+
+        ConfirmedA2uiAction result = service.confirm(7L, actionId.toString(), "surface-1", token, "idem-1");
+
+        assertThat(result.appointmentId()).isEqualTo(appointmentId.toString());
+        assertThat(action.getStatus()).isEqualTo("CONSUMED");
+        assertThat(hold.getStatus()).isEqualTo("CONFIRMED");
+        assertThat(hold.getConfirmedAppointmentId()).isEqualTo(101L);
+        verify(appointments).confirmHeld(7L, hold, slot);
+    }
+
+    private A2uiActionService service(A2uiActionRepository repository, ConfirmationTokenService tokens, Clock clock) {
+        return new A2uiActionService(repository, tokens, clock, mock(AppointmentHoldRepository.class),
+                mock(ScheduleSlotRepository.class), mock(AppointmentCommandService.class));
     }
 }

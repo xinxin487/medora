@@ -41,4 +41,8 @@ public interface ScheduleSlotRepository extends JpaRepository<ScheduleSlotEntity
             where s.publicId = :publicId
             """)
     Optional<ScheduleSlotEntity> findByPublicIdForUpdate(@Param("publicId") UUID publicId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from ScheduleSlotEntity s where s.id = :id")
+    Optional<ScheduleSlotEntity> findByIdForUpdate(@Param("id") Long id);
 }

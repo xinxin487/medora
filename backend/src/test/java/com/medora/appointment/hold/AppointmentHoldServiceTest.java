@@ -58,6 +58,27 @@ class AppointmentHoldServiceTest {
         verify(holds).save(any(AppointmentHoldEntity.class));
     }
 
+    @Test
+    void indexesAPersistedHoldForFastExpiryWithoutMakingRedisAuthoritative() {
+        AppointmentHoldRepository holds = mock(AppointmentHoldRepository.class);
+        ScheduleSlotRepository slots = mock(ScheduleSlotRepository.class);
+        HoldExpiryIndex index = mock(HoldExpiryIndex.class);
+        UUID slotId = UUID.randomUUID();
+        ScheduleSlotEntity slot = slot(slotId);
+        when(holds.findByUserIdAndIdempotencyKey(7L, "idem-3")).thenReturn(Optional.empty());
+        when(slots.findByPublicIdForUpdate(slotId)).thenReturn(Optional.of(slot));
+        when(holds.save(any(AppointmentHoldEntity.class))).thenAnswer(invocation -> {
+            AppointmentHoldEntity hold = invocation.getArgument(0);
+            ReflectionTestUtils.setField(hold, "publicId", UUID.fromString("00000000-0000-0000-0000-000000000030"));
+            return hold;
+        });
+        AppointmentHoldService service = new AppointmentHoldService(holds, slots, failingLock(), fixedClock(), index);
+
+        service.prepare(7L, slotId.toString(), "idem-3", "AGENT");
+
+        verify(index).schedule("00000000-0000-0000-0000-000000000030", Instant.parse("2026-09-21T14:02:00Z").atOffset(ZoneOffset.UTC));
+    }
+
     private SlotLock failingLock() { return slotId -> { throw new IllegalStateException("redis unavailable"); }; }
     private Clock fixedClock() { return Clock.fixed(Instant.parse("2026-09-21T14:00:00Z"), ZoneOffset.UTC); }
     private ScheduleSlotEntity slot(UUID publicId) {

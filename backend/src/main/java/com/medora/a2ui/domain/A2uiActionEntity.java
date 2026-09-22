@@ -37,4 +37,5 @@ public class A2uiActionEntity extends BaseEntity {
     public String getTokenHash() { return tokenHash; }
     public String getStatus() { return status; }
     public OffsetDateTime getExpiresAt() { return expiresAt; }
+    public OffsetDateTime getConsumedAt() { return consumedAt; }
 }

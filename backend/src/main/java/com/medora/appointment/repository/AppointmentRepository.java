@@ -21,6 +21,8 @@ public interface AppointmentRepository extends JpaRepository<AppointmentEntity, 
 
     boolean existsByUserAccountAndSlotAndStatus(UserAccountEntity userAccount, ScheduleSlotEntity slot, String status);
 
+    long countBySlot_IdAndStatus(Long slotId, String status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select a

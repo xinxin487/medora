@@ -29,6 +29,11 @@ public class AppointmentHoldEntity extends BaseEntity {
         return hold;
     }
 
+    public void confirm(Long appointmentId) {
+        transition("CONFIRMED");
+        confirmedAppointmentId = appointmentId;
+    }
+
     public void confirm() { transition("CONFIRMED"); }
     public void cancel() { transition("CANCELLED"); }
     public void expire() { transition("EXPIRED"); }
