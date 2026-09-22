@@ -89,7 +89,7 @@ class AdkAgentTopologyTest {
         assertThat(qd2.name()).isEqualTo("queryDoctors");
         assertThat(qss.name()).isEqualTo("queryScheduleSlots");
         assertThat(gua.name()).isEqualTo("getUserAppointments");
-        assertThat(ba.name()).isEqualTo("bookAppointment");
+        assertThat(ba.name()).isEqualTo("prepareAppointment");
         assertThat(ca.name()).isEqualTo("cancelAppointment");
         assertThat(sk.name()).isEqualTo("searchKnowledge");
     }
@@ -127,7 +127,7 @@ class AdkAgentTopologyTest {
         List<String> toolNames = agent.tools().stream().map(BaseTool::name).toList();
         assertThat(toolNames).containsExactlyInAnyOrder(
                 "queryDepartments", "queryDoctors", "queryScheduleSlots",
-                "getUserAppointments", "bookAppointment", "cancelAppointment"
+                "getUserAppointments", "prepareAppointment", "cancelAppointment"
         );
     }
 

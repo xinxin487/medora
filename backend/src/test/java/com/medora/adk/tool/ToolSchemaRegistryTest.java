@@ -32,7 +32,7 @@ class ToolSchemaRegistryTest {
         assertThat(registry.has(ToolNames.QUERY_DOCTORS)).isTrue();
         assertThat(registry.has(ToolNames.QUERY_SCHEDULE_SLOTS)).isTrue();
         assertThat(registry.has(ToolNames.GET_USER_APPOINTMENTS)).isTrue();
-        assertThat(registry.has(ToolNames.BOOK_APPOINTMENT)).isTrue();
+        assertThat(registry.has(ToolNames.PREPARE_APPOINTMENT)).isTrue();
         assertThat(registry.has(ToolNames.CANCEL_APPOINTMENT)).isTrue();
         assertThat(registry.has(ToolNames.SEARCH_KNOWLEDGE)).isTrue();
     }
@@ -45,11 +45,17 @@ class ToolSchemaRegistryTest {
     }
 
     @Test
-    void bookAppointmentRequiresSlotId() {
-        ToolSchemaDescriptor desc = registry.get(ToolNames.BOOK_APPOINTMENT);
+    void prepareAppointmentRequiresSlotId() {
+        ToolSchemaDescriptor desc = registry.get(ToolNames.PREPARE_APPOINTMENT);
         assertThat(desc.required()).containsExactly("slotId");
         assertThat(desc.parameters()).containsOnlyKeys("slotId");
         assertThat(desc.parameters().get("slotId").type()).isEqualTo(Type.Known.STRING);
+    }
+
+    @Test
+    void prepareAppointmentIsTheOnlyAgentBookingEntryPoint() {
+        assertThat(registry.has("prepareAppointment")).isTrue();
+        assertThat(registry.has("bookAppointment")).isFalse();
     }
 
     @Test
@@ -91,7 +97,7 @@ class ToolSchemaRegistryTest {
 
     @Test
     void buildParametersSchemaWithRequired() {
-        ToolSchemaDescriptor desc = registry.get(ToolNames.BOOK_APPOINTMENT);
+        ToolSchemaDescriptor desc = registry.get(ToolNames.PREPARE_APPOINTMENT);
         Schema schema = desc.buildParametersSchema();
         assertThat(schema.required()).isPresent();
         java.util.List<String> required = schema.required().get();
@@ -115,7 +121,7 @@ class ToolSchemaRegistryTest {
     @Test
     void allDescriptorsHaveNameAndDescription() {
         List.of(ToolNames.QUERY_DEPARTMENTS, ToolNames.QUERY_DOCTORS, ToolNames.QUERY_SCHEDULE_SLOTS,
-                        ToolNames.GET_USER_APPOINTMENTS, ToolNames.BOOK_APPOINTMENT,
+                        ToolNames.GET_USER_APPOINTMENTS, ToolNames.PREPARE_APPOINTMENT,
                         ToolNames.CANCEL_APPOINTMENT, ToolNames.SEARCH_KNOWLEDGE)
                 .forEach(name -> {
                     ToolSchemaDescriptor d = registry.get(name);

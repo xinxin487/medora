@@ -101,8 +101,14 @@ public class AdkAgentTopology {
     }
 
     @Bean
+    public BaseTool adkPrepareAppointmentTool() {
+        return tool(ToolNames.PREPARE_APPOINTMENT, "booking");
+    }
+
+    /** @deprecated tests and callers should use adkPrepareAppointmentTool. */
+    @Deprecated
     public BaseTool adkBookAppointmentTool() {
-        return tool(ToolNames.BOOK_APPOINTMENT, "booking");
+        return adkPrepareAppointmentTool();
     }
 
     @Bean
@@ -154,7 +160,7 @@ public class AdkAgentTopology {
                                  BaseTool adkQueryDoctorsTool,
                                  BaseTool adkQueryScheduleSlotsTool,
                                  BaseTool adkGetUserAppointmentsTool,
-                                 BaseTool adkBookAppointmentTool,
+                                 BaseTool adkPrepareAppointmentTool,
                                  BaseTool adkCancelAppointmentTool) {
         return LlmAgent.builder()
                 .name("booking_agent")
@@ -164,7 +170,7 @@ public class AdkAgentTopology {
                         你是 Medora 医院的预约助手。可调用以下工具:
                           - queryDepartments / queryDoctors / queryScheduleSlots:查询信息
                           - getUserAppointments:查询用户已有预约
-                          - bookAppointment(slotId):挂号(slotId 必须来自上一轮 queryScheduleSlots 结果)
+                          - prepareAppointment(slotId):生成预约确认卡片(slotId 必须来自上一轮 queryScheduleSlots 结果)
                           - cancelAppointment(appointmentId):取消(appointmentId 必须来自上一轮 getUserAppointments 结果)
 
                         Slot 填充规则(关键):
@@ -173,14 +179,13 @@ public class AdkAgentTopology {
                               * 缺科室:问"您想看哪个科室?"
                               * 缺医生:问"有指定的医生吗?没有的话我推荐一位?"
                               * 缺日期/时段:问"您希望约什么时间?"
-                          - 调 bookAppointment 前,必须先用 queryScheduleSlots 把 slotId 真实拿到
+                          - 调 prepareAppointment 前,必须先用 queryScheduleSlots 把 slotId 真实拿到
                           - 调 cancelAppointment 前,必须先用 getUserAppointments 确认预约 ID
 
                         **工具调用后的回复规则(必须遵守)**:
                           - 调用任何工具后,必须用自然语言告诉用户结果,不能不输出文字就结束。
-                          - bookAppointment 成功后,告诉用户:预约成功、科室、医生、日期、时段、挂号费。
-                            (从工具返回的 data 字段读取,不要编造)
-                          - bookAppointment 失败后,告诉用户失败原因,并询问是否换时间/医生。
+                          - prepareAppointment 成功后,告诉用户已生成确认卡片；只有用户在卡片中确认后才会完成预约。
+                          - prepareAppointment 失败后,告诉用户失败原因,并询问是否换时间/医生。
                           - cancelAppointment 成功后,告诉用户已取消的预约号。
                           - queryScheduleSlots 返回后,用易读的格式列出可选号源。
                           - 即使工具返回的内容已经包含信息,也必须用助手口吻复述,不能让用户
@@ -190,7 +195,7 @@ public class AdkAgentTopology {
                         """)
                 .tools(List.of(adkQueryDepartmentsTool, adkQueryDoctorsTool,
                         adkQueryScheduleSlotsTool, adkGetUserAppointmentsTool,
-                        adkBookAppointmentTool, adkCancelAppointmentTool))
+                        adkPrepareAppointmentTool, adkCancelAppointmentTool))
                 .beforeModelCallbackSync(inputSafety)
                 .afterModelCallbackSync(outputSafety)
                 .beforeToolCallbackSync(highRiskToolGuard)

@@ -27,7 +27,7 @@ public class ToolSchemaRegistry {
                 ToolNames.QUERY_DOCTORS, queryDoctors(),
                 ToolNames.QUERY_SCHEDULE_SLOTS, queryScheduleSlots(),
                 ToolNames.GET_USER_APPOINTMENTS, getUserAppointments(),
-                ToolNames.BOOK_APPOINTMENT, bookAppointment(),
+                ToolNames.PREPARE_APPOINTMENT, prepareAppointment(),
                 ToolNames.CANCEL_APPOINTMENT, cancelAppointment(),
                 ToolNames.SEARCH_KNOWLEDGE, searchKnowledge()
         );
@@ -89,8 +89,8 @@ public class ToolSchemaRegistry {
                 .build();
     }
 
-    private static ToolSchemaDescriptor bookAppointment() {
-        return ToolSchemaDescriptor.builder(ToolNames.BOOK_APPOINTMENT, "预约挂号(高风险,需 slotId 由用户提供)")
+    private static ToolSchemaDescriptor prepareAppointment() {
+        return ToolSchemaDescriptor.builder(ToolNames.PREPARE_APPOINTMENT, "创建预约确认卡片(高风险,需 slotId 由用户提供)")
                 .param("slotId", ToolSchemaDescriptor.FieldSchema.string("号源 ID,必填,必须来自上一轮 queryScheduleSlots 的结果")
                         .asRequired())
                 .build();

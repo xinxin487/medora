@@ -168,7 +168,7 @@ public class AdkEventToSseAdapter {
             if (!"SUCCESS".equals(String.valueOf(e.get("status")))) continue;
             String toolName = String.valueOf(e.get("toolName"));
             Object data = extractDataField(e);
-            if ("bookAppointment".equals(toolName) && data instanceof Map map) {
+            if ("prepareAppointment".equals(toolName) && data instanceof Map map) {
                 String built = formatBookSuccess(map);
                 if (built != null) return built;
             }

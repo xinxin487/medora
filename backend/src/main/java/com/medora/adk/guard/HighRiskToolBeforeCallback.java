@@ -38,7 +38,7 @@ public class HighRiskToolBeforeCallback implements BeforeToolCallbackSync {
                                               ToolContext toolContext) {
         Objects.requireNonNull(tool, "tool");
         String toolName = tool.name();
-        if (ToolNames.BOOK_APPOINTMENT.equals(toolName)) {
+        if (ToolNames.PREPARE_APPOINTMENT.equals(toolName)) {
             return validateBookAppointment(args, toolContext);
         }
         if (ToolNames.CANCEL_APPOINTMENT.equals(toolName)) {
@@ -50,7 +50,7 @@ public class HighRiskToolBeforeCallback implements BeforeToolCallbackSync {
     private static Optional<Map<String, Object>> validateBookAppointment(Map<String, Object> args, ToolContext ctx) {
         Object slotId = args == null ? null : args.get("slotId");
         if (!(slotId instanceof String s) || s.isBlank()) {
-            log.warn("HighRiskToolBeforeCallback blocked bookAppointment: missing slotId");
+            log.warn("HighRiskToolBeforeCallback blocked prepareAppointment: missing slotId");
             throw new com.medora.common.exception.BusinessException(
                     "AGENT_TOOL_ARGUMENT_MISSING",
                     org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,

@@ -292,7 +292,7 @@ public class ConversationSummaryService {
         }
 
         // 规则降级
-        if (toolResults.stream().anyMatch(result -> ToolNames.BOOK_APPOINTMENT.equals(result.toolName()))) {
+        if (toolResults.stream().anyMatch(result -> ToolNames.PREPARE_APPOINTMENT.equals(result.toolName()))) {
             return "预约挂号办理";
         }
         if (toolResults.stream().anyMatch(result -> ToolNames.CANCEL_APPOINTMENT.equals(result.toolName()))) {
