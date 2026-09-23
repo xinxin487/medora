@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.Schema;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
@@ -15,6 +16,7 @@ import java.util.Map;
 public class ToolSchemaValidator {
     private final ObjectMapper objectMapper;
     private final Schema schema;
+    @Autowired
     public ToolSchemaValidator(ObjectMapper objectMapper) { this.objectMapper = objectMapper; this.schema = null; }
     private ToolSchemaValidator(ObjectMapper objectMapper, Schema schema) { this.objectMapper = objectMapper; this.schema = schema; }
     public static ToolSchemaValidator fromClasspath(ObjectMapper mapper, String schemaName) {

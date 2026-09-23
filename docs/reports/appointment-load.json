@@ -1,32 +1,32 @@
 {
-  "generatedAt" : "2026-09-22T14:42:21.823219Z",
-  "gitCommit" : "7c10bcd",
+  "generatedAt" : "2026-09-22T15:32:50.364777Z",
+  "gitCommit" : "2079085",
   "fixtureVersion" : "m6-v1",
   "featureFlags" : {
-    "contextBuilder" : true,
-    "toolGateway" : true,
-    "a2uiAppointment" : true,
+    "mcp" : true,
     "layeredRag" : true,
-    "mcp" : true
+    "a2uiAppointment" : true,
+    "toolGateway" : true,
+    "contextBuilder" : true
   },
   "command" : "./scripts/generate-a-stage-reports.sh",
   "metrics" : {
     "redisMode" : "DATABASE_FALLBACK",
-    "finalConfirmed" : 0,
-    "p95Millis" : 95,
-    "p50Millis" : 50,
-    "oversellCount" : 0,
-    "conflicts" : 89,
-    "successes" : 10,
-    "attempts" : 100,
-    "finalAvailable" : 0,
-    "duplicates" : 1,
+    "finalReserved" : 10,
     "quota" : 10,
-    "finalReserved" : 10
+    "duplicates" : 1,
+    "finalAvailable" : 0,
+    "attempts" : 100,
+    "successes" : 10,
+    "conflicts" : 89,
+    "oversellCount" : 0,
+    "p50Millis" : 50,
+    "p95Millis" : 95,
+    "finalConfirmed" : 0
   },
   "environment" : {
-    "javaVersion" : 21,
+    "osFamily" : "Mac OS X",
     "dataMode" : "m4-concurrency-fixture-replay",
-    "osFamily" : "Mac OS X"
+    "javaVersion" : 21
   }
 }

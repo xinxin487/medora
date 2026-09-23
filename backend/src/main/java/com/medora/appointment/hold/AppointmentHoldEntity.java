@@ -4,6 +4,8 @@ import com.medora.common.domain.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -16,7 +18,9 @@ public class AppointmentHoldEntity extends BaseEntity {
     @Column(name = "idempotency_key", nullable = false) private String idempotencyKey;
     @Column(name = "status", nullable = false) private String status;
     @Column(name = "expires_at", nullable = false) private OffsetDateTime expiresAt;
-    @Column(name = "snapshot_json", nullable = false) private String snapshotJson = "{}";
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "snapshot_json", nullable = false, columnDefinition = "jsonb")
+    private String snapshotJson = "{}";
     @Column(name = "confirmed_appointment_id") private Long confirmedAppointmentId;
 
     public static AppointmentHoldEntity pending(Long userId, Long slotId, String idempotencyKey, OffsetDateTime expiresAt) {

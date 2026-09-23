@@ -4,8 +4,8 @@
 
 | Metadata | Value |
 |---|---|
-| Generated at | 2026-09-22T14:42:20.346066Z |
-| Git commit | `7c10bcd` |
+| Generated at | 2026-09-22T15:32:48.811304Z |
+| Git commit | `2079085` |
 | Fixture | `m6-v1` |
 | Command | `./scripts/generate-a-stage-reports.sh` |
 

@@ -33,7 +33,7 @@ class GatewayToolRegistryTest {
     }
 
     @Test void exposesStrictInputSchemasForAllLocalTools() throws Exception {
-        for (String tool : List.of("query-departments", "query-doctors", "query-schedule-slots", "get-user-appointments", "book-appointment", "cancel-appointment", "search-knowledge")) {
+        for (String tool : List.of("query-departments", "query-doctors", "query-schedule-slots", "get-user-appointments", "prepare-appointment", "cancel-appointment", "search-knowledge")) {
             try (InputStream stream = getClass().getResourceAsStream("/tool-schemas/" + tool + "-input.json")) {
                 assertThat(stream).as(tool).isNotNull();
                 Map<String, Object> schema = new ObjectMapper().readValue(stream, Map.class);

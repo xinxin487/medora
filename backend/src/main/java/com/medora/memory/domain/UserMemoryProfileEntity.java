@@ -62,7 +62,8 @@ public class UserMemoryProfileEntity extends BaseEntity {
     @Column(name = "normalized_value")
     private String normalizedValue;
 
-    @Column(name = "fingerprint", nullable = false)
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "fingerprint", nullable = false, length = 64, columnDefinition = "char(64)")
     private String fingerprint = "legacy";
 
     @Column(name = "evidence_count", nullable = false)

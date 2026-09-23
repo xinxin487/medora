@@ -52,6 +52,9 @@ logging:
   level:
     root: INFO
     com.medora: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: INFO
+    org.hibernate.orm.jdbc.bind: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} requestId=%X{requestId:-na} method=%X{httpMethod:-na} path=%X{requestPath:-na} user=%X{userId:-anonymous} - %msg%n"
 

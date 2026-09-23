@@ -1,33 +1,26 @@
 # Frontend
 
-这是 Medora 的前端工程骨架，当前处于 `Phase 0：工程初始化`。
+这是 Medora 的 Next.js 15 / React 19 前端，包含患者端、管理后台与 A2UI 预约交互。
 
-## 当前包含
+## 环境
 
-- Next.js App Router 基础结构
-- TypeScript 基础配置
-- Tailwind CSS 基础配置
-- 最小首页
-- API 基础目录
+- Node.js 22（见 `.nvmrc`）
+- npm（使用已提交的 `package-lock.json`）
+- 已启动的 Medora 后端
 
-## 当前不包含
-
-- 登录页
-- 对话页
-- 预约相关页面
-- 管理后台页面
-- 真实 API 调用逻辑
-
-## 启动
+## 安装与启动
 
 ```bash
-npm install
+npm ci
+npm run build
 npm run dev
 ```
 
-## 下一步
+默认访问 `http://localhost:3000`，默认后端地址为 `http://localhost:8080/api/v1`。如需覆盖，在项目根 `.env` 中设置：
 
-- 接入登录页面
-- 增加 API client
-- 增加主数据查询页面
+```dotenv
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080/api/v1
+NEXT_PUBLIC_APP_NAME=Medora
+```
 
+不要在 `NEXT_PUBLIC_*` 变量中放置 API key、JWT secret 或其他敏感值；这些变量会进入浏览器构建产物。
