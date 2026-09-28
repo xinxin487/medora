@@ -15,11 +15,22 @@ public class LlmReranker implements RerankService {
         try {
             List<RerankDecision> decisions = mapper.readValue(client.rerank(query, original), new TypeReference<>() {});
             if (decisions == null || decisions.size() != original.size()) return original;
+            if (decisions.stream().anyMatch(this::invalid)) return original;
             Set<Long> expected = original.stream().map(KnowledgeChunkSearchRow::getChunkId).collect(java.util.stream.Collectors.toSet());
             Set<Long> actual = decisions.stream().map(RerankDecision::chunkId).collect(java.util.stream.Collectors.toSet());
             if (actual.size() != decisions.size() || !actual.equals(expected)) return original;
             Map<Long, KnowledgeChunkSearchRow> byId = new HashMap<>(); original.forEach(row -> byId.put(row.getChunkId(), row));
-            return decisions.stream().sorted(Comparator.comparingDouble(RerankDecision::relevance).reversed()).map(d -> byId.get(d.chunkId())).toList();
+            return decisions.stream().sorted(Comparator.comparingDouble(this::clampedRelevance).reversed()).map(d -> byId.get(d.chunkId())).toList();
         } catch (RuntimeException | java.io.IOException ignored) { return original; }
+    }
+
+    private boolean invalid(RerankDecision decision) {
+        return decision == null || decision.chunkId() == null || decision.relevance() == null
+                || !Double.isFinite(decision.relevance())
+                || decision.reason() == null || decision.reason().isBlank();
+    }
+
+    private double clampedRelevance(RerankDecision decision) {
+        return Math.max(0, Math.min(1, decision.relevance()));
     }
 }

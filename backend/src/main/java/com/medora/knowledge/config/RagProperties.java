@@ -15,6 +15,11 @@ public class RagProperties {
     private int keywordCandidateK = 20;
     private int vectorCandidateK = 20;
     private int rerankCandidateK = 20;
+    private int parentMaxTokens = 1200;
+    private int childMinTokens = 180;
+    private int childMaxTokens = 350;
+    private int childOverlapTokens = 40;
+    private double semanticBoundaryThreshold = 0.65;
 
     public int getDefaultTopK() {
         return defaultTopK;
@@ -61,4 +66,14 @@ public class RagProperties {
     public void setVectorCandidateK(int vectorCandidateK) { this.vectorCandidateK = vectorCandidateK; }
     public int getRerankCandidateK() { return rerankCandidateK; }
     public void setRerankCandidateK(int rerankCandidateK) { this.rerankCandidateK = rerankCandidateK; }
+    public int getParentMaxTokens() { return parentMaxTokens; }
+    public void setParentMaxTokens(int parentMaxTokens) { this.parentMaxTokens = parentMaxTokens; }
+    public int getChildMinTokens() { return childMinTokens; }
+    public void setChildMinTokens(int childMinTokens) { this.childMinTokens = childMinTokens; }
+    public int getChildMaxTokens() { return childMaxTokens; }
+    public void setChildMaxTokens(int childMaxTokens) { this.childMaxTokens = childMaxTokens; }
+    public int getChildOverlapTokens() { return childOverlapTokens; }
+    public void setChildOverlapTokens(int childOverlapTokens) { this.childOverlapTokens = childOverlapTokens; }
+    public double getSemanticBoundaryThreshold() { return semanticBoundaryThreshold; }
+    public void setSemanticBoundaryThreshold(double semanticBoundaryThreshold) { this.semanticBoundaryThreshold = semanticBoundaryThreshold; }
 }

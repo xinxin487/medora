@@ -2,6 +2,7 @@ package com.medora.knowledge.service;
 
 import com.medora.ai.embedding.EmbeddingService;
 import com.medora.ai.embedding.EmbeddingVector;
+import com.medora.common.config.EvolutionProperties;
 import com.medora.knowledge.chunk.DocumentChunk;
 import com.medora.knowledge.chunk.DocumentChunker;
 import com.medora.knowledge.chunk.StructureAwareSplitter;
@@ -28,27 +29,33 @@ public class DocumentIngestService {
     private static final Logger log = LoggerFactory.getLogger(DocumentIngestService.class);
 
     private final DocumentChunker documentChunker;
+    private final StructureAwareSplitter structureAwareSplitter;
     private final KnowledgeChunkRepository knowledgeChunkRepository;
     private final KnowledgeIngestTaskRepository knowledgeIngestTaskRepository;
     private final KnowledgeDocumentRepository knowledgeDocumentRepository;
     private final KnowledgeJsonService knowledgeJsonService;
     private final EmbeddingService embeddingService;
     private final TransactionTemplate transactionTemplate;
+    private final EvolutionProperties evolutionProperties;
 
     public DocumentIngestService(DocumentChunker documentChunker,
+                                 StructureAwareSplitter structureAwareSplitter,
                                  KnowledgeChunkRepository knowledgeChunkRepository,
                                  KnowledgeIngestTaskRepository knowledgeIngestTaskRepository,
                                  KnowledgeDocumentRepository knowledgeDocumentRepository,
                                  KnowledgeJsonService knowledgeJsonService,
                                  EmbeddingService embeddingService,
-                                 TransactionTemplate transactionTemplate) {
+                                 TransactionTemplate transactionTemplate,
+                                 EvolutionProperties evolutionProperties) {
         this.documentChunker = documentChunker;
+        this.structureAwareSplitter = structureAwareSplitter;
         this.knowledgeChunkRepository = knowledgeChunkRepository;
         this.knowledgeIngestTaskRepository = knowledgeIngestTaskRepository;
         this.knowledgeDocumentRepository = knowledgeDocumentRepository;
         this.knowledgeJsonService = knowledgeJsonService;
         this.embeddingService = embeddingService;
         this.transactionTemplate = transactionTemplate;
+        this.evolutionProperties = evolutionProperties;
     }
 
     @Async
@@ -75,10 +82,7 @@ public class DocumentIngestService {
         );
         try {
             knowledgeChunkRepository.deleteByDocument(document);
-            List<DocumentChunk> chunks = new StructureAwareSplitter().split(parsedContent);
-            if (chunks.isEmpty()) {
-                chunks = documentChunker.chunk(parsedContent);
-            }
+            List<DocumentChunk> chunks = selectChunks(parsedContent);
             Map<Integer, KnowledgeChunkEntity> parents = new HashMap<>();
             for (DocumentChunk chunk : chunks) {
                 if (!"PARENT".equals(chunk.chunkType())) continue;
@@ -109,7 +113,8 @@ public class DocumentIngestService {
                 KnowledgeIngestTaskEntity.running(document, "EMBED")
         );
         try {
-            List<KnowledgeChunkEntity> chunks = knowledgeChunkRepository.findByDocumentOrderByChunkIndexAsc(document);
+            List<KnowledgeChunkEntity> chunks = knowledgeChunkRepository.findByDocumentAndChunkTypeOrderByChunkIndexAsc(
+                    document, KnowledgeChunkEntity.TYPE_CHILD);
             for (KnowledgeChunkEntity chunk : chunks) {
                 EmbeddingVector embedding = embeddingService.embed(chunk.getContent());
                 knowledgeChunkRepository.updateEmbedding(chunk.getId(), toVectorLiteral(embedding.values()),
@@ -123,6 +128,14 @@ public class DocumentIngestService {
             task.markFailed(ex.getMessage());
             throw ex;
         }
+    }
+
+    List<DocumentChunk> selectChunks(String parsedContent) {
+        if (!evolutionProperties.layeredRag()) {
+            return documentChunker.chunk(parsedContent);
+        }
+        List<DocumentChunk> chunks = structureAwareSplitter.split(parsedContent);
+        return chunks.isEmpty() ? documentChunker.chunk(parsedContent) : chunks;
     }
 
     private String toVectorLiteral(double[] values) {
