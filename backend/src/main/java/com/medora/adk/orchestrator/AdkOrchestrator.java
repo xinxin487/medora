@@ -228,6 +228,8 @@ public class AdkOrchestrator {
         state.put(AdkToolContextResolver.KEY_USER_MESSAGE, command.message());
         state.put(AdkToolContextResolver.KEY_TRACE_ID, command.traceId());
         state.put(AdkToolContextResolver.KEY_CONVERSATION_ID, sessionId);
+        state.put("context.mode", "LEGACY");
+        state.put("context.diagnostics", Map.of());
         if (evolutionProperties.contextBuilder() && contextBuilder != null) {
             try {
                 AgentContextBundle bundle = contextBuilder.build(new ContextBuildRequest(
@@ -238,16 +240,36 @@ public class AdkOrchestrator {
                 state.put("context.memories", bundle.memories());
                 state.put("context.rag", bundle.ragEvidence());
                 state.put("context.business", bundle.businessState());
+                boolean hasContext = !bundle.summary().isBlank() || !bundle.recentTurns().isEmpty()
+                        || !bundle.memories().isEmpty() || !bundle.ragEvidence().isEmpty()
+                        || !bundle.businessState().isEmpty();
+                boolean conversationUnavailable = bundle.decisions().stream().anyMatch(decision ->
+                        "CONVERSATION".equals(decision.source())
+                                && "PROVIDER_UNAVAILABLE".equals(decision.reasonCode()));
+                if (hasContext && !conversationUnavailable) {
+                    state.put("context.mode", "GOVERNED");
+                }
                 Map<String, Integer> reasonCounts = new LinkedHashMap<>();
                 bundle.decisions().forEach(decision -> reasonCounts.merge(decision.reasonCode(), 1, Integer::sum));
+                Map<String, Integer> sourceCounts = new LinkedHashMap<>();
+                bundle.decisions().stream().filter(decision -> decision.selected())
+                        .forEach(decision -> sourceCounts.merge(decision.source(), 1, Integer::sum));
+                int usedTokens = bundle.decisions().stream().filter(decision -> decision.selected())
+                        .mapToInt(decision -> decision.estimatedTokens()).sum();
+                boolean degraded = reasonCounts.containsKey("PROVIDER_UNAVAILABLE");
                 state.put("context.diagnostics", Map.of(
                         "profile", bundle.profile().name(),
-                        "budget", Map.of("allocated", bundle.budget().totalAllocated()),
+                        "budget", Map.of("allocated", bundle.budget().totalAllocated(), "used", usedTokens),
+                        "sourceCounts", sourceCounts,
                         "reasonCounts", reasonCounts,
                         "itemFingerprints", bundle.decisions().stream().map(decision -> decision.fingerprint()).filter(value -> value != null && !value.isBlank()).toList(),
-                        "degraded", false));
+                        "decisions", bundle.decisions(),
+                        "degraded", degraded));
             } catch (RuntimeException ex) {
-                log.warn("context builder degraded. traceId={}", command.traceId(), ex);
+                log.warn("context builder degraded. traceId={}, cause={}",
+                        command.traceId(), ex.getClass().getSimpleName());
+                state.put("context.diagnostics", Map.of("profile", "GENERAL", "degraded", true,
+                        "reasonCounts", Map.of("BUILDER_UNAVAILABLE", 1)));
                 if (evolutionMetrics != null) {
                     evolutionMetrics.recordContextBuild("GENERAL", "DEGRADED");
                 }

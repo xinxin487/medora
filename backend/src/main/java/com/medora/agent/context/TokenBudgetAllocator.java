@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 public class TokenBudgetAllocator {
     public ContextBudget allocate(ContextProfile profile, int maxTokens) {
         int total = Math.max(0, maxTokens);
-        int system = portion(total, 20), current = portion(total, 25), summary = portion(total, 15);
+        int system = portion(total, 20), current = portion(total, 25), summary = portion(total, 10);
         int rag = portion(total, profile == ContextProfile.BOOKING ? 15 : 30);
         int memory = portion(total, 10);
         int business = total - system - current - summary - rag - memory;

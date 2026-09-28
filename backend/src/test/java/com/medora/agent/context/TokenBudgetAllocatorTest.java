@@ -15,4 +15,10 @@ class TokenBudgetAllocatorTest {
     @Test void zeroBudgetStaysZero() {
         assertThat(allocator.allocate(ContextProfile.GENERAL, 0).totalAllocated()).isZero();
     }
+
+    @Test void businessStateHasBudgetWithinTheSharedSummarySlice() {
+        ContextBudget budget = allocator.allocate(ContextProfile.GENERAL, 1_000);
+        assertThat(budget.summary() + budget.business()).isEqualTo(150);
+        assertThat(budget.business()).isPositive();
+    }
 }

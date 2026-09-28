@@ -30,6 +30,36 @@ import static org.mockito.Mockito.when;
 class MemoryServiceTest {
 
     @Test
+    void contextCandidatesKeepActiveMemoriesAheadOfRejectedHistory() {
+        UserMemoryProfileRepository repository = mock(UserMemoryProfileRepository.class);
+        UserMemoryProfileEntity active = mock(UserMemoryProfileEntity.class);
+        UserMemoryProfileEntity inactive = mock(UserMemoryProfileEntity.class);
+        when(active.getMemoryType()).thenReturn("PREFERRED_PERIOD");
+        when(active.getSummary()).thenReturn("偏好上午");
+        when(active.getConfidence()).thenReturn(java.math.BigDecimal.valueOf(.9));
+        when(active.getSource()).thenReturn("USER_EXPLICIT");
+        when(active.getStatus()).thenReturn("ACTIVE");
+        when(inactive.getMemoryType()).thenReturn("PREFERRED_PERIOD");
+        when(inactive.getSummary()).thenReturn("旧的下午偏好");
+        when(inactive.getConfidence()).thenReturn(java.math.BigDecimal.valueOf(.5));
+        when(inactive.getSource()).thenReturn("USER_MENTION");
+        when(inactive.getStatus()).thenReturn("INACTIVE");
+        when(repository.findTop100ByUserAccountIdAndStatusOrderByUpdatedAtDesc(1L, "ACTIVE"))
+                .thenReturn(List.of(active));
+        when(repository.findTop100ByUserAccountIdOrderByUpdatedAtDesc(1L))
+                .thenReturn(List.of(inactive, active));
+        when(active.isActive()).thenReturn(true);
+        MemoryService service = new MemoryService(repository, new KnowledgeJsonService(new ObjectMapper()),
+                new ObjectMapper(), mock(AgentModelGateway.class));
+
+        var candidates = service.loadContextCandidates(1L);
+
+        org.assertj.core.api.Assertions.assertThat(candidates).hasSize(2);
+        org.assertj.core.api.Assertions.assertThat(candidates.getFirst().status()).isEqualTo("ACTIVE");
+        org.assertj.core.api.Assertions.assertThat(candidates.getLast().status()).isEqualTo("INACTIVE");
+    }
+
+    @Test
     void shouldWriteStableMemoriesWhenAppointmentBookedSuccessfully() {
         UserMemoryProfileRepository repository = mock(UserMemoryProfileRepository.class);
         AgentModelGateway gateway = mock(AgentModelGateway.class);

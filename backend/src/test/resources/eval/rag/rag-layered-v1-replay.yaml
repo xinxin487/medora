@@ -1,0 +1,73 @@
+cases:
+  - id: rag-faq
+    ranked: [doc-faq, doc-rules]
+    refused: false
+    citationHit: true
+    latencyMillis: 118
+    promptUnitsEstimate: 268
+  - id: rag-synonym
+    ranked: [doc-faq]
+    refused: false
+    citationHit: true
+    latencyMillis: 121
+    promptUnitsEstimate: 251
+  - id: rag-cross-paragraph
+    ranked: [doc-faq, doc-rules]
+    refused: false
+    citationHit: true
+    latencyMillis: 130
+    promptUnitsEstimate: 274
+  - id: rag-no-answer
+    ranked: []
+    refused: true
+    citationHit: false
+    latencyMillis: 105
+    promptUnitsEstimate: 212
+  - id: rag-expired
+    ranked: [doc-rules]
+    refused: false
+    citationHit: false
+    latencyMillis: 117
+    promptUnitsEstimate: 245
+  - id: rag-department-filter
+    ranked: [doc-respiratory]
+    refused: false
+    citationHit: true
+    latencyMillis: 126
+    promptUnitsEstimate: 261
+  - id: rag-conflicting-version
+    ranked: [doc-rules-v2, doc-rules]
+    refused: false
+    citationHit: true
+    latencyMillis: 135
+    promptUnitsEstimate: 281
+  - id: rag-parent-completion
+    ranked: [doc-faq, doc-rules]
+    refused: false
+    citationHit: true
+    latencyMillis: 132
+    promptUnitsEstimate: 279
+  - id: rag-lexical-only
+    ranked: [doc-slots]
+    refused: false
+    citationHit: true
+    latencyMillis: 109
+    promptUnitsEstimate: 226
+  - id: rag-vector-only
+    ranked: [doc-faq, doc-slots]
+    refused: false
+    citationHit: false
+    latencyMillis: 127
+    promptUnitsEstimate: 254
+  - id: rag-hybrid-win
+    ranked: [doc-respiratory]
+    refused: false
+    citationHit: true
+    latencyMillis: 124
+    promptUnitsEstimate: 263
+  - id: rag-duplicate-content
+    ranked: [doc-rules, doc-faq]
+    refused: false
+    citationHit: true
+    latencyMillis: 120
+    promptUnitsEstimate: 258

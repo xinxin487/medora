@@ -1,21 +1,21 @@
 # Layered RAG evaluation
 
-> Checked-in deterministic ranking fixture; values are regression evidence, not production traffic measurements.
+> Checked-in deterministic retrieval replay; values are regression evidence, not production traffic measurements.
 
 | Metadata | Value |
 |---|---|
-| Generated at | 2026-09-22T15:32:48.811304Z |
-| Git commit | `2079085` |
+| Generated at | 2026-09-23T03:06:08.765891Z |
+| Git commit | `60c5049` |
 | Fixture | `m6-v1` |
 | Command | `./scripts/generate-a-stage-reports.sh` |
 
 | Metric | Value |
 |---|---:|
 | Recall@5 | 1.0 |
-| MRR@5 | 1.0 |
-| nDCG@5 | 1.0 |
-| Refusal accuracy | 1.0 |
-| Citation hit rate | 1.0 |
-| Latency (ms) | 0.0 |
-| Prompt-unit estimate | 0 |
-| Evaluation mode | deterministic-fixture-baseline |
+| MRR@5 | 0.8 |
+| nDCG@5 | 0.8 |
+| Refusal accuracy | 0.9166666666666666 |
+| Citation hit rate | 0.9 |
+| Latency (ms) | 122.0 |
+| Prompt-unit estimate | 3072 |
+| Evaluation mode | deterministic-retrieval-replay |

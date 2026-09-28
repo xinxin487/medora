@@ -38,7 +38,7 @@ class WaitlistPromotionTest {
         cancelled.cancel();
         WaitlistEntryEntity candidate = WaitlistEntryEntity.waiting(3L, 19L, 0, Instant.parse("2026-09-21T13:59:00Z").atOffset(ZoneOffset.UTC));
         ReflectionTestUtils.setField(candidate, "id", 30L);
-        when(index.popNext(19L)).thenReturn(List.of("stale", "30"));
+        when(index.popNext(19L)).thenReturn(Optional.of("stale"), Optional.of("30"), Optional.empty());
         when(entries.findByIdForUpdate(30L)).thenReturn(Optional.of(candidate));
         AppointmentHoldService holds = mock(AppointmentHoldService.class);
         AppointmentHoldRepository holdRepository = mock(AppointmentHoldRepository.class);
@@ -77,6 +77,32 @@ class WaitlistPromotionTest {
         job.rebuild();
 
         verify(index).add(eq(19L), eq("40"), anyDouble());
+    }
+
+    @Test
+    void requeuesClaimedCandidateWhenOfferCreationFails() {
+        WaitlistEntryRepository entries = mock(WaitlistEntryRepository.class);
+        WaitlistIndex index = mock(WaitlistIndex.class);
+        WaitlistEntryEntity candidate = WaitlistEntryEntity.waiting(3L, 19L, 2,
+                Instant.parse("2026-09-21T13:59:00Z").atOffset(ZoneOffset.UTC));
+        ReflectionTestUtils.setField(candidate, "id", 30L);
+        when(index.popNext(19L)).thenReturn(Optional.of("30"));
+        when(entries.findByIdForUpdate(30L)).thenReturn(Optional.of(candidate));
+        ScheduleSlotRepository slots = mock(ScheduleSlotRepository.class);
+        ScheduleSlotEntity slot = new ScheduleSlotEntity();
+        ReflectionTestUtils.setField(slot, "publicId", UUID.randomUUID());
+        when(slots.findById(19L)).thenReturn(Optional.of(slot));
+        AppointmentHoldService holds = mock(AppointmentHoldService.class);
+        doThrow(new IllegalStateException("Redis unavailable")).when(holds)
+                .prepare(3L, slot.getPublicId().toString(), "WAIT-30", "WAITLIST");
+        WaitlistPromotionHandler handler = new WaitlistPromotionHandler(entries, index, slots, holds,
+                mock(AppointmentHoldRepository.class), mock(A2uiActionService.class),
+                mock(AppointmentSurfaceFactory.class), fixedClock());
+
+        handler.onSlotReleased(new SlotReleased(19L));
+
+        assertThat(candidate.getStatus()).isEqualTo("WAITING");
+        verify(index).add(eq(19L), eq("30"), anyDouble());
     }
     private Clock fixedClock() { return Clock.fixed(Instant.parse("2026-09-21T14:00:00Z"), ZoneOffset.UTC); }
 }

@@ -78,6 +78,22 @@ public class MemoryService {
                 .toList();
     }
 
+    /** Bounded candidate view for context diagnostics; never exposes raw value_json. */
+    @Transactional(readOnly = true)
+    public List<MemoryContextCandidate> loadContextCandidates(Long userAccountId) {
+        List<UserMemoryProfileEntity> active = userMemoryProfileRepository
+                .findTop100ByUserAccountIdAndStatusOrderByUpdatedAtDesc(userAccountId,
+                        UserMemoryProfileEntity.STATUS_ACTIVE);
+        List<UserMemoryProfileEntity> recentNonActive = userMemoryProfileRepository
+                .findTop100ByUserAccountIdOrderByUpdatedAtDesc(userAccountId).stream()
+                .filter(entity -> !entity.isActive()).toList();
+        return java.util.stream.Stream.concat(active.stream(), recentNonActive.stream())
+                .map(entity -> new MemoryContextCandidate(entity.getMemoryType(), entity.getSummary(),
+                        entity.getConfidence().doubleValue(), entity.getSource(), entity.getStatus(),
+                        entity.getExpiresAt(), entity.getLastConfirmedAt()))
+                .toList();
+    }
+
     @Transactional
     public void captureFromAgentRun(UserAccountEntity userAccount,
                                     String userMessage,
@@ -489,5 +505,14 @@ public class MemoryService {
             double confidence,
             String source
     ) {
+    }
+
+    public record MemoryContextCandidate(String memoryType, String summary, double confidence,
+                                         String source, String status, OffsetDateTime expiresAt,
+                                         OffsetDateTime confirmedAt) {
+        public MemoryContextCandidate(String memoryType, String summary, double confidence,
+                                      String source, String status, OffsetDateTime expiresAt) {
+            this(memoryType, summary, confidence, source, status, expiresAt, null);
+        }
     }
 }

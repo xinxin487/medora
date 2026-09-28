@@ -230,8 +230,17 @@ public class ChatRuntimeService {
             return conversation.getPublicId().toString();
         });
         if (conversationPublicId != null) {
-            redisContextCacheService.pushMessage(conversationPublicId, "USER", userMessage);
-            redisContextCacheService.pushMessage(conversationPublicId, "ASSISTANT", reply);
+            cacheMessageBestEffort(conversationPublicId, "USER", userMessage);
+            cacheMessageBestEffort(conversationPublicId, "ASSISTANT", reply);
+        }
+    }
+
+    private void cacheMessageBestEffort(String conversationPublicId, String role, String content) {
+        try {
+            redisContextCacheService.pushMessage(conversationPublicId, role, content);
+        } catch (RuntimeException ex) {
+            log.warn("chat context cache write unavailable. conversationId={}, role={}, cause={}",
+                    conversationPublicId, role, ex.getClass().getSimpleName());
         }
     }
 

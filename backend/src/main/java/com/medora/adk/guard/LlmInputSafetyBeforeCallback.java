@@ -9,6 +9,7 @@ import com.google.adk.models.LlmResponse;
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 import com.medora.adk.sanitizer.InputSanitizer;
+import com.medora.adk.context.ContextPromptBeforeCallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -104,6 +105,7 @@ public class LlmInputSafetyBeforeCallback implements BeforeModelCallbackSync {
 
     @Override
     public Optional<LlmResponse> call(CallbackContext callbackContext, LlmRequest.Builder builder) {
+        ContextPromptBeforeCallback.appendGovernedContext(callbackContext, builder);
         injectTodayContext(builder);
         String userMessage = extractUserMessage(callbackContext);
         SafetyDecision decision = check(userMessage);

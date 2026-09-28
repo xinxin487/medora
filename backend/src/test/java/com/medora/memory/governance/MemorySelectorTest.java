@@ -34,6 +34,27 @@ class MemorySelectorTest {
         assertThat(selection.decisions()).extracting(d -> d.reasonCode()).contains("CONFLICT_LOSER", "BUDGET_EXCEEDED");
     }
 
+    @Test void limitsHistoryMemoriesToTwoPerType() {
+        var selection = selector.select(ContextProfile.BOOKING, List.of(
+                item("history-1", "VISIT_HISTORY", "一月复诊", null),
+                item("history-2", "VISIT_HISTORY", "二月复诊", null),
+                item("history-3", "VISIT_HISTORY", "三月复诊", null)), 100, List.of());
+
+        assertThat(selection.items()).hasSize(2);
+        assertThat(selection.decisions()).extracting(d -> d.reasonCode()).contains("TYPE_LIMIT");
+    }
+
+    @Test void newerMemoryWinsWhenRelevanceConfidenceAndSourceAreEqual() {
+        var old = new ContextItem("MEMORY", "PREFERRED_PERIOD", "old", "上午", .8,
+                "USER_EXPLICIT", null, 20, OffsetDateTime.now().minusDays(150));
+        var recent = new ContextItem("MEMORY", "PREFERRED_PERIOD", "recent", "下午", .8,
+                "USER_EXPLICIT", null, 20, OffsetDateTime.now().minusDays(1));
+
+        var selection = selector.select(ContextProfile.BOOKING, List.of(old, recent), 100, List.of());
+
+        assertThat(selection.items()).extracting(ContextItem::fingerprint).containsExactly("recent");
+    }
+
     private ContextItem item(String fingerprint, String type, String text, OffsetDateTime expiresAt) {
         return new ContextItem("MEMORY", type, fingerprint, text, .8, "USER_EXPLICIT", expiresAt, 20);
     }

@@ -3,6 +3,7 @@ package com.medora.a2ui.controller;
 import com.medora.a2ui.api.A2uiActionRequest;
 import com.medora.a2ui.api.A2uiActionResponse;
 import com.medora.a2ui.service.A2uiActionService;
+import com.medora.a2ui.service.A2uiConfirmationMessageService;
 import com.medora.a2ui.service.ConfirmedA2uiAction;
 import com.medora.auth.repository.UserAccountRepository;
 import com.medora.auth.security.CurrentAuthenticatedUserProvider;
@@ -22,21 +23,24 @@ public class A2uiActionController {
     private final A2uiActionService actions;
     private final CurrentAuthenticatedUserProvider authenticatedUser;
     private final UserAccountRepository users;
+    private final A2uiConfirmationMessageService confirmationMessages;
 
     public A2uiActionController(A2uiActionService actions, CurrentAuthenticatedUserProvider authenticatedUser,
-                                UserAccountRepository users) {
-        this.actions = actions; this.authenticatedUser = authenticatedUser; this.users = users;
+                                UserAccountRepository users, A2uiConfirmationMessageService confirmationMessages) {
+        this.actions = actions; this.authenticatedUser = authenticatedUser; this.users = users; this.confirmationMessages = confirmationMessages;
     }
 
     @PostMapping
     public ApiResponse<A2uiActionResponse> consume(@Valid @RequestBody A2uiActionRequest request,
                                                     @RequestHeader("Idempotency-Key") String idempotencyKey) {
-        Long userId = users.findByPublicId(authenticatedUser.getRequiredUser().userPublicId())
+        var user = users.findByPublicId(authenticatedUser.getRequiredUser().userPublicId())
                 .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", HttpStatus.NOT_FOUND, "current user not found"))
-                .getId();
+                ;
+        Long userId = user.getId();
         try {
             ConfirmedA2uiAction result = actions.confirm(userId, request.actionId(), request.surfaceId(),
                     request.confirmationToken(), idempotencyKey);
+            confirmationMessages.record(result.conversationId(), user, result.actionId(), result.appointmentId());
             return ApiResponse.success(new A2uiActionResponse(result.actionId(), result.status(), result.appointmentId()));
         } catch (IllegalArgumentException ex) {
             throw new BusinessException("A2UI_ACTION_INVALID", HttpStatus.BAD_REQUEST, ex.getMessage());

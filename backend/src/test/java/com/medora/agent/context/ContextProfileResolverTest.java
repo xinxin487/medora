@@ -13,4 +13,8 @@ class ContextProfileResolverTest {
     @Test void ambiguousInputReturnsGeneral() {
         assertThat(resolver.resolve("你好", "GENERAL")).isEqualTo(ContextProfile.GENERAL);
     }
+
+    @Test void approximateTimeIsNotMistakenForBooking() {
+        assertThat(resolver.resolve("大约多久能恢复", "GENERAL")).isEqualTo(ContextProfile.GENERAL);
+    }
 }

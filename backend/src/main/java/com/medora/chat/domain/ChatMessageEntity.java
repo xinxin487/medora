@@ -57,11 +57,16 @@ public class ChatMessageEntity extends BaseEntity {
     }
 
     public static ChatMessageEntity assistantText(ConversationEntity conversation, String content) {
+        return assistantText(conversation, content, null);
+    }
+
+    public static ChatMessageEntity assistantText(ConversationEntity conversation, String content, String clientMessageId) {
         ChatMessageEntity entity = new ChatMessageEntity();
         entity.conversation = conversation;
         entity.role = "ASSISTANT";
         entity.messageType = "TEXT";
         entity.content = content;
+        entity.clientMessageId = clientMessageId;
         return entity;
     }
 

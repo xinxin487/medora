@@ -41,6 +41,29 @@ SET display_name = EXCLUDED.display_name,
     preference_json = EXCLUDED.preference_json,
     updated_at = NOW();
 
+INSERT INTO user_account (public_id, email, password_hash, status, register_source)
+VALUES (
+  '60000000-0000-0000-0000-000000000002',
+  'demo.admin@medora.local',
+  '$2y$10$WUbiix2Yfe9HQZ97wxBYrOZSskl8VlQMmqJRVBbBvaDS/x2DOpK4K',
+  'ACTIVE',
+  'ADMIN'
+)
+ON CONFLICT (lower(email)) WHERE email IS NOT NULL DO UPDATE
+SET password_hash = EXCLUDED.password_hash,
+    status = EXCLUDED.status,
+    register_source = EXCLUDED.register_source,
+    updated_at = NOW();
+
+INSERT INTO user_profile (user_id, display_name, preference_json)
+SELECT id, '本机受控管理员', '{"fixtureVersion":"m6-v1","role":"ADMIN"}'::jsonb
+FROM user_account
+WHERE lower(email) = 'demo.admin@medora.local'
+ON CONFLICT (user_id) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    preference_json = EXCLUDED.preference_json,
+    updated_at = NOW();
+
 INSERT INTO department (public_id, code, name, category, description, tags, status, sort_order)
 VALUES
   ('61000000-0000-0000-0000-000000000001', 'RESPIRATORY', '呼吸内科', 'OUTPATIENT', '处理咳嗽、气促等呼吸系统问题。', ARRAY['咳嗽','呼吸困难','哮喘'], 'ACTIVE', 10),
@@ -187,5 +210,6 @@ SET section_path = EXCLUDED.section_path,
 COMMIT;
 SQL
 
-printf 'Seeded synthetic fixture m6-v1 (demo patient, 2 doctors, 4 slots, 1 parent-child document).\n'
+printf 'Seeded synthetic fixture m6-v1 (demo patient, local admin, 2 doctors, 4 slots, 1 parent-child document).\n'
 printf 'Disposable local login: demo.patient@medora.local / MedoraDemo!2026\n'
+printf 'Controlled local admin: demo.admin@medora.local / MedoraAdmin!2026\n'

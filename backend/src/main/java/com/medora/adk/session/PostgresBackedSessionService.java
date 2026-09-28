@@ -205,7 +205,18 @@ public class PostgresBackedSessionService implements BaseSessionService {
         // 用 Collections.emptyList() 会抛 UnsupportedOperationException。
         // CopyOnWriteArrayList 兼顾「可变」+「线程安全」(Runner 内部多线程订阅)。
         // 关键:list 初始就装入历史 chat_message 反构的 Event,否则 Runner 拿不到对话上下文。
-        List<Event> history = reconstructEvents(entity);
+        List<Event> history = "GOVERNED".equals(state.get("context.mode"))
+                ? new ArrayList<>() : new ArrayList<>(reconstructEvents(entity));
+        if (!history.isEmpty() && state.get("medora:userMessage") instanceof String currentMessage) {
+            Event last = history.getLast();
+            String lastText = last.content()
+                    .flatMap(content -> content.parts().flatMap(parts -> parts.isEmpty()
+                            ? Optional.empty() : parts.getFirst().text()))
+                    .orElse("");
+            if (USER_AUTHOR.equals(last.author()) && currentMessage.strip().equals(lastText.strip())) {
+                history.removeLast();
+            }
+        }
         log.info("ADK toSession loaded history. publicId={}, historyEvents={}, stateSize={}",
                 entity.getPublicId(), history.size(), state.size());
         return Session.builder(appName)

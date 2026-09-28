@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medora.agent.application.AgentModelGateway;
 import com.medora.agent.application.AgentRunResult;
+import com.medora.agent.context.ContextFingerprint;
 import com.medora.agent.tool.ToolExecutionResult;
 import com.medora.agent.tool.ToolNames;
 import com.medora.appointment.api.response.AppointmentCancelResponse;
@@ -32,9 +33,13 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class ConversationSummaryService {
+
+    private static final Pattern EXPLICIT_ALLERGY = Pattern.compile("(?:我|本人|患者)对([\\p{IsHan}A-Za-z0-9]{1,20})过敏");
 
     private final ConversationRepository conversationRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -80,14 +85,38 @@ public class ConversationSummaryService {
                                            String userMessage,
                                            String assistantReply,
                                            AgentRunResult runResult) {
-        List<RecentMessage> recentMessages = loadRecentMessages(conversation);
         long messageCount = chatMessageRepository.countByConversation(conversation);
-        Map<String, Object> businessState = buildBusinessState(conversation, userMessage, assistantReply, runResult);
-        Map<String, Object> summaryData = buildSummaryData(userMessage, runResult);
-        String summaryText = buildSummaryText(summaryData);
-
         ConversationSummaryEntity entity = conversationSummaryRepository.findByConversation(conversation)
                 .orElseGet(() -> ConversationSummaryEntity.create(conversation));
+        Map<String, Object> businessState = buildBusinessState(conversation, userMessage, assistantReply, runResult);
+        Map<String, Object> summaryData = buildSummaryData(userMessage, runResult);
+        Map<String, Object> previousSummary = readJsonObject(entity.getSummaryJson());
+        List<String> newFacts = castStringList(summaryData.get("confirmedFacts"));
+        List<String> priorFacts = castStringList(previousSummary.get("confirmedFacts"));
+        String winningPeriodKey = java.util.stream.Stream.concat(priorFacts.stream(), newFacts.stream())
+                .map(ContextFingerprint::periodPreferenceKey).filter(StringUtils::hasText)
+                .reduce((first, latest) -> latest).orElse("");
+        LinkedHashSet<String> confirmedFacts = new LinkedHashSet<>();
+        for (String priorFact : priorFacts) {
+            String priorKey = ContextFingerprint.periodPreferenceKey(priorFact);
+            if (!priorKey.isEmpty() && !priorKey.equals(winningPeriodKey)) continue;
+            confirmedFacts.add(priorFact);
+        }
+        for (String fact : newFacts) {
+            String key = ContextFingerprint.periodPreferenceKey(fact);
+            if (key.isEmpty() || key.equals(winningPeriodKey)) confirmedFacts.add(fact);
+        }
+        List<String> orderedFacts = confirmedFacts.stream().filter(StringUtils::hasText)
+                .map(fact -> truncate(fact, 100)).toList();
+        List<String> boundedFacts = new ArrayList<>();
+        if (orderedFacts.size() > 12) {
+            boundedFacts.addAll(orderedFacts.subList(0, 4));
+            boundedFacts.addAll(orderedFacts.subList(orderedFacts.size() - 8, orderedFacts.size()));
+        } else {
+            boundedFacts.addAll(orderedFacts);
+        }
+        summaryData.put("confirmedFacts", boundedFacts);
+        String summaryText = buildSummaryText(summaryData);
         entity.refresh(
                 summaryText,
                 knowledgeJsonService.toJson(summaryData),
@@ -174,6 +203,24 @@ public class ConversationSummaryService {
      */
     private List<String> collectConfirmedFacts(String userMessage, List<ToolExecutionResult> toolResults) {
         LinkedHashSet<String> facts = new LinkedHashSet<>();
+
+        if (userMessage != null) {
+            Matcher allergy = EXPLICIT_ALLERGY.matcher(userMessage);
+            if (allergy.find()) {
+                String following = userMessage.substring(allergy.end()).stripLeading();
+                String preceding = userMessage.substring(0, allergy.start());
+                boolean isQuestion = following.startsWith("吗") || following.startsWith("?")
+                        || following.startsWith("？") || following.startsWith("会")
+                        || following.startsWith("该") || following.startsWith("怎么办")
+                        || preceding.contains("是不是") || preceding.contains("是否")
+                        || preceding.contains("请问") || preceding.contains("如果")
+                        || preceding.contains("假如") || preceding.contains("假设")
+                        || preceding.contains("万一");
+                if (!isQuestion) {
+                    facts.add("用户自述对" + allergy.group(1) + "过敏");
+                }
+            }
+        }
 
         // 从工具结果提取事实（确定性高，不需要 LLM）
         for (ToolExecutionResult result : toolResults) {
@@ -339,9 +386,13 @@ public class ConversationSummaryService {
         UUID conversationPublicId = conversation.getPublicId();
         if (conversationPublicId != null) {
             String publicId = conversationPublicId.toString();
-            List<RecentMessage> cached = redisContextCacheService.getRecentMessages(publicId);
-            if (cached != null && !cached.isEmpty()) {
-                return cached;
+            try {
+                List<RecentMessage> cached = redisContextCacheService.getRecentMessages(publicId);
+                if (cached != null && !cached.isEmpty()) {
+                    return cached;
+                }
+            } catch (RuntimeException ignored) {
+                // Redis is a cache; the durable chat messages remain the fallback.
             }
         }
         List<ChatMessageEntity> rows = chatMessageRepository.findTop12ByConversationOrderByCreatedAtDescIdDesc(conversation);

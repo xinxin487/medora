@@ -116,11 +116,11 @@ public class A2uiActionService {
         }
         if ("CONSUMED".equals(action.getStatus())) {
             if (hold.getConfirmedAppointmentId() == null) throw new IllegalStateException("confirmed appointment is missing");
-            if (appointments == null) return new ConfirmedA2uiAction(action.getPublicId().toString(), action.getStatus(), hold.getConfirmedAppointmentId().toString());
+            if (appointments == null) return new ConfirmedA2uiAction(action.getPublicId().toString(), action.getStatus(), hold.getConfirmedAppointmentId().toString(), action.getConversationId());
             String appointmentId = appointments.findById(hold.getConfirmedAppointmentId())
                     .orElseThrow(() -> new IllegalStateException("confirmed appointment is missing"))
                     .getPublicId().toString();
-            return new ConfirmedA2uiAction(action.getPublicId().toString(), action.getStatus(), appointmentId);
+            return new ConfirmedA2uiAction(action.getPublicId().toString(), action.getStatus(), appointmentId, action.getConversationId());
         }
         if (!"PENDING".equals(action.getStatus())) throw new IllegalStateException("a2ui action is no longer pending");
         if (!"PENDING_CONFIRMATION".equals(hold.getStatus()) || !hold.getExpiresAt().isAfter(OffsetDateTime.now(clock))) {
@@ -132,7 +132,7 @@ public class A2uiActionService {
         hold.confirm(appointment.getId());
         action.consume(OffsetDateTime.now(clock));
         if (waitlistEntries != null) waitlistEntries.findByOfferedHoldId(hold.getId()).ifPresent(entry -> entry.confirm());
-        return new ConfirmedA2uiAction(action.getPublicId().toString(), action.getStatus(), appointment.getPublicId().toString());
+        return new ConfirmedA2uiAction(action.getPublicId().toString(), action.getStatus(), appointment.getPublicId().toString(), action.getConversationId());
     }
 
     private void validateBinding(A2uiActionEntity action, Long userId, String surfaceId, String rawToken) {

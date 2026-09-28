@@ -13,14 +13,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Reproducible fixture evaluation for the layered RAG demo. It intentionally
- * measures the checked-in cases only; production comparisons should feed this
- * runner with captured retrieval outputs rather than treating it as live data.
- */
+/** Reproducible evaluation over checked-in, independently captured retrieval replay data. */
 public final class RagEvaluationRunner {
     private static final String FIXTURE = "/eval/rag/rag-layered-v1.yaml";
+    private static final String REPLAY = "/eval/rag/rag-layered-v1-replay.yaml";
     private static final String COMMAND = "./scripts/generate-a-stage-reports.sh";
+    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
 
     private RagEvaluationRunner() { }
 
@@ -29,53 +27,103 @@ public final class RagEvaluationRunner {
     }
 
     public static void writeReport(Path output) throws Exception {
-        Map<String, Object> metrics = calculateFixtureBaseline();
+        Map<String, Object> metrics = calculateResourceMetrics();
         Map<String, Object> report = EvidenceReportSupport.report(COMMAND, metrics,
-                EvidenceReportSupport.deterministicEnvironment("rag-fixture-replay"));
+                EvidenceReportSupport.deterministicEnvironment("rag-retrieval-replay"));
         EvidenceReportSupport.writeJson(output.resolve("rag-evaluation.json"), report);
         Files.writeString(output.resolve("rag-evaluation.md"), markdown(report));
     }
 
-    private static Map<String, Object> calculateFixtureBaseline() throws Exception {
-        List<String> expected = expectedIds();
-        List<List<String>> ranked = expected.stream().map(List::of).toList();
-        double recall = average(expected, ranked, RagMetrics::recallAt5);
-        double mrr = average(expected, ranked, RagMetrics::reciprocalRankAt5);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("suite", "rag-layered-v1");
-        result.put("caseCount", expected.size());
-        result.put("recallAt5", recall);
-        result.put("mrrAt5", mrr);
-        result.put("ndcgAt5", mrr); // one relevant expected ID per fixed case
-        result.put("refusalAccuracy", 1.0);
-        result.put("citationHitRate", 1.0);
-        result.put("latencyMillis", 0.0);
-        result.put("promptUnitsEstimate", 0);
-        result.put("evaluationMode", "deterministic-fixture-baseline");
-        return result;
-    }
-
-    private static List<String> expectedIds() throws Exception {
-        try (InputStream stream = RagEvaluationRunner.class.getResourceAsStream(FIXTURE)) {
-            if (stream == null) throw new IllegalStateException("missing fixture " + FIXTURE);
-            JsonNode cases = new ObjectMapper(new YAMLFactory()).readTree(stream).path("cases");
-            List<String> ids = new ArrayList<>();
-            for (JsonNode item : cases) ids.add(item.path("expected").asText());
-            return ids;
+    static Map<String, Object> calculateMetrics(Path expectedFixture, Path replayFixture) throws Exception {
+        try (InputStream expected = Files.newInputStream(expectedFixture);
+             InputStream replay = Files.newInputStream(replayFixture)) {
+            return calculateMetrics(expected, replay);
         }
     }
 
-    private static double average(List<String> expected, List<List<String>> ranked,
-                                  java.util.function.BiFunction<String, List<String>, Double> metric) {
-        return java.util.stream.IntStream.range(0, expected.size())
-                .mapToDouble(index -> metric.apply(expected.get(index), ranked.get(index)))
-                .average().orElse(0.0);
+    private static Map<String, Object> calculateResourceMetrics() throws Exception {
+        try (InputStream expected = RagEvaluationRunner.class.getResourceAsStream(FIXTURE);
+             InputStream replay = RagEvaluationRunner.class.getResourceAsStream(REPLAY)) {
+            if (expected == null || replay == null) throw new IllegalStateException("missing RAG evaluation fixture or replay");
+            return calculateMetrics(expected, replay);
+        }
+    }
+
+    private static Map<String, Object> calculateMetrics(InputStream expectedInput, InputStream replayInput) throws Exception {
+        Map<String, String> expected = expectedCases(expectedInput);
+        Map<String, ReplayCase> replay = replayCases(replayInput);
+        if (!expected.keySet().equals(replay.keySet())) {
+            throw new IllegalStateException("replay case IDs must exactly match expected fixture IDs");
+        }
+
+        List<Double> recalls = new ArrayList<>();
+        List<Double> mrrs = new ArrayList<>();
+        List<Double> citationHits = new ArrayList<>();
+        List<Double> refusalResults = new ArrayList<>();
+        List<Double> latencies = new ArrayList<>();
+        int promptUnits = 0;
+        for (Map.Entry<String, String> expectation : expected.entrySet()) {
+            ReplayCase actual = replay.get(expectation.getKey());
+            boolean noAnswerExpected = "NO_ANSWER".equals(expectation.getValue());
+            refusalResults.add(noAnswerExpected == actual.refused ? 1.0 : 0.0);
+            latencies.add(actual.latencyMillis);
+            promptUnits += actual.promptUnitsEstimate;
+            if (!noAnswerExpected) {
+                recalls.add(RagMetrics.recallAt5(expectation.getValue(), actual.ranked));
+                mrrs.add(RagMetrics.reciprocalRankAt5(expectation.getValue(), actual.ranked));
+                citationHits.add(actual.citationHit ? 1.0 : 0.0);
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("suite", "rag-layered-v1");
+        result.put("caseCount", expected.size());
+        result.put("retrievalCaseCount", recalls.size());
+        result.put("recallAt5", average(recalls));
+        result.put("mrrAt5", average(mrrs));
+        result.put("ndcgAt5", average(mrrs));
+        result.put("refusalAccuracy", average(refusalResults));
+        result.put("citationHitRate", average(citationHits));
+        result.put("latencyMillis", average(latencies));
+        result.put("promptUnitsEstimate", promptUnits);
+        result.put("evaluationMode", "deterministic-retrieval-replay");
+        return result;
+    }
+
+    private static Map<String, String> expectedCases(InputStream input) throws Exception {
+        Map<String, String> cases = new LinkedHashMap<>();
+        for (JsonNode item : YAML.readTree(input).path("cases")) {
+            String id = item.path("id").asText();
+            if (id.isBlank() || cases.putIfAbsent(id, item.path("expected").asText()) != null) {
+                throw new IllegalStateException("expected fixture contains a blank or duplicate case ID");
+            }
+        }
+        return cases;
+    }
+
+    private static Map<String, ReplayCase> replayCases(InputStream input) throws Exception {
+        Map<String, ReplayCase> cases = new LinkedHashMap<>();
+        for (JsonNode item : YAML.readTree(input).path("cases")) {
+            String id = item.path("id").asText();
+            List<String> ranked = new ArrayList<>();
+            item.path("ranked").forEach(node -> ranked.add(node.asText()));
+            ReplayCase replay = new ReplayCase(ranked, item.path("refused").asBoolean(),
+                    item.path("citationHit").asBoolean(), item.path("latencyMillis").asDouble(),
+                    item.path("promptUnitsEstimate").asInt());
+            if (id.isBlank() || cases.putIfAbsent(id, replay) != null) {
+                throw new IllegalStateException("replay contains a blank or duplicate case ID");
+            }
+        }
+        return cases;
+    }
+
+    private static double average(List<Double> values) {
+        return values.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
     }
 
     private static String markdown(Map<String, Object> report) {
         Map<?, ?> metrics = (Map<?, ?>) report.get("metrics");
         return "# Layered RAG evaluation\n\n"
-                + "> Checked-in deterministic ranking fixture; values are regression evidence, not production traffic measurements.\n\n"
+                + "> Checked-in deterministic retrieval replay; values are regression evidence, not production traffic measurements.\n\n"
                 + EvidenceReportSupport.metadataMarkdown(report)
                 + "| Metric | Value |\n|---|---:|\n"
                 + "| Recall@5 | " + metrics.get("recallAt5") + " |\n"
@@ -87,4 +135,7 @@ public final class RagEvaluationRunner {
                 + "| Prompt-unit estimate | " + metrics.get("promptUnitsEstimate") + " |\n"
                 + "| Evaluation mode | " + metrics.get("evaluationMode") + " |\n";
     }
+
+    private record ReplayCase(List<String> ranked, boolean refused, boolean citationHit,
+                              double latencyMillis, int promptUnitsEstimate) { }
 }

@@ -428,12 +428,6 @@ export default function AssistantPage() {
         </header>
 
         <div className="min-h-[420px] space-y-4 overflow-y-auto px-5 py-5">
-          {Object.values(a2uiSurfaces).map((surface) => (
-            <A2uiSurfaceCard key={surface.surfaceId} surface={surface}
-              onResolved={(surfaceId) => setA2uiSurfaces((current) => reduceA2uiSurface(current, {
-                event: "deleteSurface", surfaceId, rootId: "", components: [], dataModel: {},
-              }))} />
-          ))}
           {messages.length === 0 ? (
             <div className="space-y-4">
               <div className="rounded-[1.5rem] border border-[rgba(20,42,39,0.08)] bg-[rgba(237,243,238,0.6)] px-5 py-6">
@@ -498,6 +492,15 @@ export default function AssistantPage() {
               </article>
             ))
           )}
+          {Object.values(a2uiSurfaces).map((surface) => (
+            <A2uiSurfaceCard key={surface.surfaceId} surface={surface}
+              onResolved={(surfaceId) => {
+                setA2uiSurfaces((current) => reduceA2uiSurface(current, {
+                  event: "deleteSurface", surfaceId, rootId: "", components: [], dataModel: {},
+                }));
+                if (activeConversationId) void loadMessages(activeConversationId);
+              }} />
+          ))}
         </div>
 
         <form

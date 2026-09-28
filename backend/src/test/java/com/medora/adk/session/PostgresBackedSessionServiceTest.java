@@ -292,6 +292,55 @@ class PostgresBackedSessionServiceTest {
         assertThat(saved).containsEntry("medora:userMessage", "帮我预约");
     }
 
+    @Test
+    void governedSessionUsesBundleInsteadOfDuplicatingThirtyLegacyEvents() {
+        when(conversationRepository.findByPublicId(conversationPublicId)).thenReturn(Optional.of(conversationEntity));
+        ChatMessageEntity historicalMessage = msg("USER", "早期信息", OffsetDateTime.now());
+        when(chatMessageRepository.findTop30ByConversationOrderByCreatedAtDescIdDesc(conversationEntity))
+                .thenReturn(new ArrayList<>(List.of(historicalMessage)));
+        ConcurrentHashMap<String, Object> state = new ConcurrentHashMap<>();
+        state.put("context.mode", "GOVERNED");
+        state.put("context.summary", "早期信息");
+
+        Session session = service.createSession("medora", "42", state, conversationPublicId.toString()).blockingGet();
+
+        assertThat(session.events()).isEmpty();
+        assertThat(service.listEvents("medora", "42", conversationPublicId.toString()).blockingGet().events())
+                .hasSize(1);
+    }
+
+    @Test
+    void legacySessionStillReconstructsHistoryAfterFeatureIsDisabled() {
+        when(conversationRepository.findByPublicId(conversationPublicId)).thenReturn(Optional.of(conversationEntity));
+        when(conversationEntity.getSessionState()).thenReturn(Map.of("context.mode", "GOVERNED"));
+        ChatMessageEntity historicalMessage = msg("USER", "旧消息", OffsetDateTime.now());
+        when(chatMessageRepository.findTop30ByConversationOrderByCreatedAtDescIdDesc(conversationEntity))
+                .thenReturn(new ArrayList<>(List.of(historicalMessage)));
+        ConcurrentHashMap<String, Object> state = new ConcurrentHashMap<>();
+        state.put("context.mode", "LEGACY");
+
+        Session session = service.createSession("medora", "42", state, conversationPublicId.toString()).blockingGet();
+
+        assertThat(session.events()).hasSize(1);
+    }
+
+    @Test
+    void legacySessionOmitsCurrentUserTurnAlreadyPersistedBeforeRunner() {
+        when(conversationRepository.findByPublicId(conversationPublicId)).thenReturn(Optional.of(conversationEntity));
+        ChatMessageEntity previous = msg("ASSISTANT", "上一轮回答", OffsetDateTime.now().minusSeconds(1));
+        ChatMessageEntity current = msg("USER", "新问题", OffsetDateTime.now());
+        when(chatMessageRepository.findTop30ByConversationOrderByCreatedAtDescIdDesc(conversationEntity))
+                .thenReturn(new ArrayList<>(List.of(current, previous)));
+        ConcurrentHashMap<String, Object> state = new ConcurrentHashMap<>();
+        state.put("context.mode", "LEGACY");
+        state.put("medora:userMessage", "新问题");
+
+        Session session = service.createSession("medora", "42", state, conversationPublicId.toString()).blockingGet();
+
+        assertThat(session.events()).hasSize(1);
+        assertThat(session.events().getFirst().author()).isEqualTo("root_router_agent");
+    }
+
     private ChatMessageEntity msg(String role, String content, OffsetDateTime createdAt) {
         ChatMessageEntity m = mock(ChatMessageEntity.class);
         when(m.getRole()).thenReturn(role);

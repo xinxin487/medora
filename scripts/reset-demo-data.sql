@@ -1,26 +1,31 @@
 BEGIN;
 
-UPDATE appointment
-SET hold_id = NULL
-WHERE user_id = (SELECT id FROM user_account WHERE lower(email) = 'demo.patient@medora.local');
+-- The reset boundary is the fixture slot, not its historical user. Smoke users and
+-- other local accounts can create DEMO_M6 records too, so clear every dependent row.
+DELETE FROM a2ui_action
+WHERE hold_id IN (
+  SELECT id FROM appointment_hold
+  WHERE slot_id IN (SELECT id FROM schedule_slot WHERE source_type = 'DEMO_M6')
+);
+
+DELETE FROM waitlist_entry
+WHERE slot_id IN (SELECT id FROM schedule_slot WHERE source_type = 'DEMO_M6');
 
 UPDATE appointment_hold
 SET confirmed_appointment_id = NULL
-WHERE user_id = (SELECT id FROM user_account WHERE lower(email) = 'demo.patient@medora.local');
+WHERE slot_id IN (SELECT id FROM schedule_slot WHERE source_type = 'DEMO_M6');
 
 DELETE FROM appointment_operation_log
 WHERE appointment_id IN (
   SELECT id FROM appointment
-  WHERE user_id = (SELECT id FROM user_account WHERE lower(email) = 'demo.patient@medora.local')
+  WHERE slot_id IN (SELECT id FROM schedule_slot WHERE source_type = 'DEMO_M6')
 );
-DELETE FROM a2ui_action
-WHERE user_id = (SELECT id FROM user_account WHERE lower(email) = 'demo.patient@medora.local');
-DELETE FROM waitlist_entry
-WHERE user_id = (SELECT id FROM user_account WHERE lower(email) = 'demo.patient@medora.local');
+
 DELETE FROM appointment
-WHERE user_id = (SELECT id FROM user_account WHERE lower(email) = 'demo.patient@medora.local');
+WHERE slot_id IN (SELECT id FROM schedule_slot WHERE source_type = 'DEMO_M6');
+
 DELETE FROM appointment_hold
-WHERE user_id = (SELECT id FROM user_account WHERE lower(email) = 'demo.patient@medora.local');
+WHERE slot_id IN (SELECT id FROM schedule_slot WHERE source_type = 'DEMO_M6');
 
 UPDATE schedule_slot
 SET available_quota = total_quota,

@@ -119,7 +119,7 @@ npm run dev
 ./scripts/smoke-a-stage.sh
 ```
 
-演示登录为 `demo.patient@medora.local` / `MedoraDemo!2026`，仅限本机合成数据。三条演示路径见 [长对话](docs/demo/01-long-conversation.md)、[分层 RAG](docs/demo/02-layered-rag.md)、[A2UI 预约与候补](docs/demo/03-a2ui-waitlist.md)。生成可复现报告：
+演示登录为 `demo.patient@medora.local` / `MedoraDemo!2026`；本机受控管理员为 `demo.admin@medora.local` / `MedoraAdmin!2026`（仅用于本机合成数据与 smoke 的 RAG 诊断验证）。三条演示路径见 [长对话](docs/demo/01-long-conversation.md)、[分层 RAG](docs/demo/02-layered-rag.md)、[A2UI 预约与候补](docs/demo/03-a2ui-waitlist.md)。生成可复现报告：
 
 ```bash
 ./scripts/generate-a-stage-reports.sh

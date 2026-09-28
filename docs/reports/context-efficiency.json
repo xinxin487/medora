@@ -1,20 +1,16 @@
 {
-  "generatedAt" : "2026-09-22T15:32:47.203892Z",
-  "gitCommit" : "2079085",
+  "generatedAt" : "2026-09-23T03:06:07.254182Z",
+  "gitCommit" : "60c5049",
   "fixtureVersion" : "m6-v1",
   "featureFlags" : {
+    "contextBuilder" : true,
+    "mcp" : true,
     "layeredRag" : true,
     "a2uiAppointment" : true,
-    "toolGateway" : true,
-    "contextBuilder" : true,
-    "mcp" : true
+    "toolGateway" : true
   },
   "command" : "./scripts/generate-a-stage-reports.sh",
   "metrics" : {
-    "m1EarlyFactPresent" : true,
-    "m1EstimatedUnits" : 79,
-    "estimatedUnitsSaved" : 256,
-    "selectedMemoryCount" : 1,
     "legacyEstimatedUnits" : 335,
     "rejectionReasons" : {
       "EXPIRED" : 1,
@@ -23,11 +19,15 @@
     },
     "turnCount" : 34,
     "legacyEarlyFactPresent" : false,
-    "duplicateCount" : 1
+    "duplicateCount" : 1,
+    "m1EarlyFactPresent" : true,
+    "m1EstimatedUnits" : 79,
+    "estimatedUnitsSaved" : 256,
+    "selectedMemoryCount" : 1
   },
   "environment" : {
+    "javaVersion" : 21,
     "osFamily" : "Mac OS X",
-    "dataMode" : "deterministic-context-fixture",
-    "javaVersion" : 21
+    "dataMode" : "deterministic-context-fixture"
   }
 }

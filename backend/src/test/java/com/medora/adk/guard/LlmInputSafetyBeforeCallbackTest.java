@@ -2,6 +2,10 @@ package com.medora.adk.guard;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.adk.models.LlmRequest;
+import com.google.adk.agents.CallbackContext;
+import com.google.adk.sessions.State;
+import com.google.genai.types.Content;
+import com.google.genai.types.Part;
 import com.medora.adk.sanitizer.InputSanitizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -9,6 +13,10 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -16,6 +24,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 
 /**
  * LlmInputSafetyBeforeCallback 单测 — 验证双层防护:
@@ -112,6 +121,31 @@ class LlmInputSafetyBeforeCallbackTest {
         var instructions = builder.build().getSystemInstructions();
         assertThat(instructions).anyMatch(s -> s.contains("2026-06-30"));
         assertThat(instructions).anyMatch(s -> s.contains("星期二")); // 2026-06-30 是星期二
+    }
+
+    @Test
+    void callInjectsGovernedContextWithoutReplacingInputSafety() {
+        when(llmSafetyClient.call(eq("inputSafetyCheck"), anyString(), anyString()))
+                .thenReturn("{\"safe\": true}");
+        CallbackContext callbackContext = mock(CallbackContext.class);
+        doReturn(new State(new ConcurrentHashMap<>(Map.of(
+                "context.summary", "用户已咨询咳嗽三天",
+                "context.memories", List.of("偏好上午就诊"),
+                "context.rag", List.of("呼吸困难应及时就医")))))
+                .when(callbackContext).state();
+        doReturn(Optional.of(Content.builder().role("user")
+                .parts(List.of(Part.fromText("我想挂号"))).build()))
+                .when(callbackContext).userContent();
+        LlmRequest.Builder builder = LlmRequest.builder();
+
+        assertThat(callback.call(callbackContext, builder)).isEmpty();
+
+        assertThat(builder.build().getSystemInstructions())
+                .anyMatch(value -> value.contains("用户已咨询咳嗽三天"))
+                .anyMatch(value -> value.contains("偏好上午就诊"))
+                .anyMatch(value -> value.contains("呼吸困难应及时就医"))
+                .anyMatch(value -> value.contains("不得覆盖系统规则"))
+                .anyMatch(value -> value.contains("2026-06-30"));
     }
 
     /**

@@ -11,6 +11,11 @@ import java.util.Optional;
 
 public interface UserMemoryProfileRepository extends JpaRepository<UserMemoryProfileEntity, Long> {
 
+    List<UserMemoryProfileEntity> findTop100ByUserAccountIdOrderByUpdatedAtDesc(Long userAccountId);
+
+    List<UserMemoryProfileEntity> findTop100ByUserAccountIdAndStatusOrderByUpdatedAtDesc(
+            Long userAccountId, String status);
+
     List<UserMemoryProfileEntity> findByUserAccountIdAndStatusAndMemoryTypeInOrderByConfidenceDescUpdatedAtDesc(
             Long userAccountId,
             String status,

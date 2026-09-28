@@ -31,4 +31,17 @@ class RagEvaluationRunnerTest {
         assertThat(Files.readString(reportDirectory.resolve("rag-evaluation.md")))
                 .contains("Recall@5", "MRR@5", "nDCG@5", "Refusal accuracy", "Citation hit rate");
     }
+
+    @Test void calculatesMetricsFromReplayRankingRatherThanExpectedAnswer(@TempDir Path tempDirectory) throws Exception {
+        Path expected = tempDirectory.resolve("expected.yaml");
+        Path replay = tempDirectory.resolve("replay.yaml");
+        Files.writeString(expected, "cases:\n  - id: c1\n    query: q\n    expected: doc-a\n");
+        Files.writeString(replay, "cases:\n  - id: c1\n    ranked: [doc-b, doc-a]\n    refused: false\n    citationHit: true\n    latencyMillis: 12\n    promptUnitsEstimate: 8\n");
+
+        Map<String, Object> metrics = RagEvaluationRunner.calculateMetrics(expected, replay);
+
+        assertThat(metrics.get("recallAt5")).isEqualTo(1.0);
+        assertThat(metrics.get("mrrAt5")).isEqualTo(0.5);
+        assertThat(metrics.get("latencyMillis")).isEqualTo(12.0);
+    }
 }

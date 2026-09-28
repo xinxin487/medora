@@ -1,30 +1,31 @@
 {
-  "generatedAt" : "2026-09-22T15:32:48.811304Z",
-  "gitCommit" : "2079085",
+  "generatedAt" : "2026-09-23T03:06:08.765891Z",
+  "gitCommit" : "60c5049",
   "fixtureVersion" : "m6-v1",
   "featureFlags" : {
-    "contextBuilder" : true,
-    "mcp" : true,
     "layeredRag" : true,
-    "a2uiAppointment" : true,
-    "toolGateway" : true
+    "mcp" : true,
+    "contextBuilder" : true,
+    "toolGateway" : true,
+    "a2uiAppointment" : true
   },
   "command" : "./scripts/generate-a-stage-reports.sh",
   "metrics" : {
-    "promptUnitsEstimate" : 0,
-    "citationHitRate" : 1.0,
-    "latencyMillis" : 0.0,
-    "caseCount" : 12,
-    "suite" : "rag-layered-v1",
     "recallAt5" : 1.0,
-    "mrrAt5" : 1.0,
-    "evaluationMode" : "deterministic-fixture-baseline",
-    "ndcgAt5" : 1.0,
-    "refusalAccuracy" : 1.0
+    "refusalAccuracy" : 0.9166666666666666,
+    "ndcgAt5" : 0.8,
+    "evaluationMode" : "deterministic-retrieval-replay",
+    "caseCount" : 12,
+    "citationHitRate" : 0.9,
+    "retrievalCaseCount" : 10,
+    "suite" : "rag-layered-v1",
+    "promptUnitsEstimate" : 3072,
+    "mrrAt5" : 0.8,
+    "latencyMillis" : 122.0
   },
   "environment" : {
-    "osFamily" : "Mac OS X",
-    "dataMode" : "rag-fixture-replay",
-    "javaVersion" : 21
+    "javaVersion" : 21,
+    "dataMode" : "rag-retrieval-replay",
+    "osFamily" : "Mac OS X"
   }
 }

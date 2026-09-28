@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { submitA2uiAction } from "@/lib/a2ui/action-client";
+import { submitA2uiAction, type A2uiActionResult } from "@/lib/a2ui/action-client";
 import type { A2uiSurface } from "@/lib/a2ui/types";
 
-export function A2uiSurfaceCard({ surface, onResolved }: { surface: A2uiSurface; onResolved: (surfaceId: string) => void }) {
+export function A2uiSurfaceCard({ surface, onResolved }: { surface: A2uiSurface; onResolved: (surfaceId: string, result: A2uiActionResult) => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const deadline = useMemo(() => new Date(surface.dataModel.expiresAt).getTime(), [surface.dataModel.expiresAt]);
@@ -17,9 +17,9 @@ export function A2uiSurfaceCard({ surface, onResolved }: { surface: A2uiSurface;
     if (submitting || remaining <= 0) return;
     setSubmitting(true);
     try {
-      await submitA2uiAction({ surfaceId: surface.surfaceId, actionId: surface.dataModel.actionId,
+      const result = await submitA2uiAction({ surfaceId: surface.surfaceId, actionId: surface.dataModel.actionId,
         confirmationToken: surface.dataModel.confirmationToken, idempotencyKey: surface.dataModel.idempotencyKey });
-      setMessage("预约已确认。"); onResolved(surface.surfaceId);
+      setMessage("预约已确认。"); onResolved(surface.surfaceId, result);
     } catch (error) { setMessage(error instanceof Error ? error.message : "确认失败，请重试。"); }
     finally { setSubmitting(false); }
   };

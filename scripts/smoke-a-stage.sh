@@ -17,6 +17,8 @@ DB_USER="${DB_USERNAME:-postgres}"
 DB_DATABASE="${DB_NAME:-medora}"
 SMOKE_EMAIL="${SMOKE_EMAIL:-smoke.m6@medora.local}"
 SMOKE_PASSWORD="${SMOKE_PASSWORD:-MedoraSmoke!2026}"
+ADMIN_SMOKE_EMAIL="${ADMIN_SMOKE_EMAIL:-demo.admin@medora.local}"
+ADMIN_SMOKE_PASSWORD="${ADMIN_SMOKE_PASSWORD:-MedoraAdmin!2026}"
 
 for command_name in "$DOCKER_BIN" "$CURL_BIN" "$NODE_BIN"; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
@@ -55,11 +57,11 @@ json_assert() {
   ' "$file" "$expression"
 }
 
-printf '[1/7] PostgreSQL + pgvector... '
+printf '[1/8] PostgreSQL + pgvector... '
 compose exec -T postgres pg_isready -U "$DB_USER" -d "$DB_DATABASE" >/dev/null
 printf 'ok\n'
 
-printf '[2/7] Redis... '
+printf '[2/8] Redis... '
 redis_reply="$(compose exec -T redis redis-cli ping | tr -d '\r')"
 if [[ "$redis_reply" != "PONG" ]]; then
   printf 'Redis health check failed.\n' >&2
@@ -67,12 +69,12 @@ if [[ "$redis_reply" != "PONG" ]]; then
 fi
 printf 'ok\n'
 
-printf '[3/7] MinIO... '
+printf '[3/8] MinIO... '
 minio_status="$($CURL_BIN --silent --show-error --max-time "$REQUEST_TIMEOUT_SECONDS" --output /dev/null --write-out '%{http_code}' "$MINIO_URL/minio/health/live")"
 expect_http 'MinIO health check' '2[0-9][0-9]' "$minio_status"
 printf 'ok\n'
 
-printf '[4/7] Backend health... '
+printf '[4/8] Backend health... '
 backend_status="$($CURL_BIN --silent --show-error --max-time "$REQUEST_TIMEOUT_SECONDS" --output "$TMP_DIR/backend-health.json" --write-out '%{http_code}' "$BACKEND_URL/actuator/health")"
 if [[ ! "$backend_status" =~ ^2[0-9][0-9]$ ]] || ! json_assert "$TMP_DIR/backend-health.json" 'json.status === "UP"'; then
   printf 'Backend health check failed (HTTP %s).\n' "$backend_status" >&2
@@ -80,12 +82,12 @@ if [[ ! "$backend_status" =~ ^2[0-9][0-9]$ ]] || ! json_assert "$TMP_DIR/backend
 fi
 printf 'ok\n'
 
-printf '[5/7] Frontend HTTP... '
+printf '[5/8] Frontend HTTP... '
 frontend_status="$($CURL_BIN --silent --show-error --max-time "$REQUEST_TIMEOUT_SECONDS" --output /dev/null --write-out '%{http_code}' "$FRONTEND_URL/login")"
 expect_http 'Frontend HTTP check' '2[0-9][0-9]|3[0-9][0-9]' "$frontend_status"
 printf 'ok\n'
 
-printf '[6/7] Authentication + deterministic knowledge fixture... '
+printf '[6/8] Patient authentication + deterministic knowledge fixture... '
 register_status="$($CURL_BIN --silent --show-error --max-time "$REQUEST_TIMEOUT_SECONDS" \
   --header 'Content-Type: application/json' \
   --output "$TMP_DIR/register.json" --write-out '%{http_code}' \
@@ -111,7 +113,35 @@ if [[ ! "$knowledge_hits" =~ ^[1-9][0-9]*$ ]]; then
 fi
 printf 'ok\n'
 
-printf '[7/7] MCP initialize + tools/list... '
+printf '[7/8] Admin RAG diagnostic API... '
+admin_login_status="$($CURL_BIN --silent --show-error --max-time "$REQUEST_TIMEOUT_SECONDS" \
+  --header 'Content-Type: application/json' \
+  --output "$TMP_DIR/admin-login.json" --write-out '%{http_code}' \
+  --data "{\"account\":\"$ADMIN_SMOKE_EMAIL\",\"password\":\"$ADMIN_SMOKE_PASSWORD\",\"loginType\":\"PASSWORD\"}" \
+  "$BACKEND_URL/api/v1/auth/login")"
+if [[ ! "$admin_login_status" =~ ^2[0-9][0-9]$ ]] || ! json_assert "$TMP_DIR/admin-login.json" 'json.code === "SUCCESS" && typeof json.data?.accessToken === "string" && json.data.accessToken.length > 0'; then
+  printf 'Admin login check failed (HTTP %s). Run ./scripts/seed-demo.sh.\n' "$admin_login_status" >&2
+  exit 1
+fi
+
+admin_access_token="$("$NODE_BIN" -e '
+  const fs = require("fs");
+  const json = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  process.stdout.write(json.data.accessToken);
+' "$TMP_DIR/admin-login.json")"
+admin_rag_status="$($CURL_BIN --silent --show-error --max-time "$REQUEST_TIMEOUT_SECONDS" \
+  --header "Authorization: Bearer $admin_access_token" \
+  --header 'Content-Type: application/json' \
+  --output "$TMP_DIR/admin-rag-diagnostic.json" --write-out '%{http_code}' \
+  --data '{"query":"持续呼吸困难","bizScope":"GUIDE","topK":3}' \
+  "$BACKEND_URL/api/v1/admin/rag-diagnostics/query")"
+if [[ ! "$admin_rag_status" =~ ^2[0-9][0-9]$ ]] || ! json_assert "$TMP_DIR/admin-rag-diagnostic.json" 'json.code === "SUCCESS" && json.data?.query === "持续呼吸困难" && Array.isArray(json.data?.items) && typeof json.data?.latencyMs === "number"'; then
+  printf 'Admin RAG diagnostic check failed (HTTP %s).\n' "$admin_rag_status" >&2
+  exit 1
+fi
+printf 'ok\n'
+
+printf '[8/8] MCP initialize + tools/list... '
 initialize_status="$($CURL_BIN --silent --show-error --max-time "$REQUEST_TIMEOUT_SECONDS" \
   --dump-header "$TMP_DIR/mcp-headers.txt" --output "$TMP_DIR/mcp-initialize.json" --write-out '%{http_code}' \
   --header "Authorization: Bearer $MCP_TOKEN" \
